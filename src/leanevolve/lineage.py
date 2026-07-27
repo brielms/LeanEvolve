@@ -182,8 +182,22 @@ def verify_lineage(run_dir: Path) -> list[str]:
         ):
             expected = node.get(key)
             file_path = run_dir / relative
-            if expected is not None and (
-                not file_path.is_file() or file_record(file_path) != expected
+            if expected is None:
+                continue
+            # Older lineages stored the relative path alongside the hash and
+            # size.  The path is already fixed by `relative` above; compare it
+            # separately so this schema extension does not look like changed
+            # candidate bytes.
+            expected_path = expected.get("path") if isinstance(expected, dict) else None
+            expected_record = (
+                {name: value for name, value in expected.items() if name != "path"}
+                if isinstance(expected, dict)
+                else expected
+            )
+            if (
+                not file_path.is_file()
+                or (expected_path is not None and expected_path != relative)
+                or file_record(file_path) != expected_record
             ):
                 errors.append(f"hash/size mismatch for {key}: {node.get('program_id')}")
     return errors

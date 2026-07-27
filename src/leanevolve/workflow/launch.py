@@ -26,6 +26,7 @@ from leanevolve.workflow.environment import (
     describe_environment,
     require_current_lock,
     require_managed_interpreter,
+    resolve_lake,
     resolve_tool,
 )
 from leanevolve.workflow.errors import Exit, WorkflowError
@@ -59,6 +60,11 @@ def require_workflow_dependencies(workflow: Workflow) -> None:
                 importlib.metadata.version("shinka-evolve")
             except importlib.metadata.PackageNotFoundError:
                 missing.append("ShinkaEvolve")
+        elif requirement == "lake":
+            # Lean is commonly installed through elan, whose bin directory
+            # need not be inherited by a bare `uv run` invocation.
+            if not resolve_lake().available:
+                missing.append(requirement)
         elif not resolve_tool(requirement).available:
             missing.append(requirement)
     if missing:
