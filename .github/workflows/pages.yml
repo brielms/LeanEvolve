@@ -47,7 +47,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Install pinned uv and Python
-        uses: astral-sh/setup-uv@v9
+        uses: astral-sh/setup-uv@v7
         with:
           # Kept in step with the [tools] pins in mise.toml. uv provisions the
           # interpreter itself from .python-version, so the pin is not repeated
