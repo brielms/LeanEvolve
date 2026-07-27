@@ -25,9 +25,10 @@ absolute paths and versions without printing credential values.
 
 - `mise run check` runs lint, tests, and incremental Lake builds. It is the fast
   edit-time signal and does not claim a clean forensic replay.
-- `mise run audit` checks `uv.lock`, runs the configured publication scan, cleans and
-  rebuilds each Lake project, runs configured axiom gates, and verifies the offline
-  demo. Add `--replay latest` or `--replay all` to include campaign replay.
+- `mise run audit` checks `uv.lock`, runs the configured publication scan and
+  documentation link check, cleans and rebuilds each Lake project, runs configured
+  axiom gates, and verifies the offline demo. Add `--replay latest` or `--replay all`
+  to include campaign replay.
 - `mise run demo` evaluates the bundled candidate through the ordinary Lean trust
   boundary and writes a small hash-verified receipt without a model call.
 
@@ -50,6 +51,29 @@ The current reusable runner accepts sequential `--proposal-steps`. Ordered
 solve/field-expansion chunk schedules belong to campaign adapters that declare a
 `chunks` schedule in `leanevolve.toml`; the parser preserves each solve and expansion
 epoch in order and never uses mise job parallelism to alter that trajectory.
+
+## Documentation site
+
+<https://brielms.github.io/LeanEvolve/> is generated from this repository, never
+hand-maintained: `index.html` is rendered from `README.md`, this page from
+`docs/workflows.md`, and the architecture page is copied from `docs/architecture.html`.
+
+```bash
+mise run docs
+python -m http.server --directory _site 8000
+```
+
+`docs` writes the site to the ignored `_site/` directory and then checks it. Because
+Pages serves the site under a repository prefix, a repo-relative link such as
+`../README.md` would break once published; the builder rewrites links that name a
+site page to that page, and every other repository path to a commit-pinned GitHub
+URL. The check fails on any internal link that would not resolve, on a link that
+would publish raw Markdown, and on a site with no `index.html`. Each page records the
+commit it was built from in a `leanevolve-source-commit` meta tag and its footer.
+
+The `Documentation site` GitHub Actions workflow runs the same command through the
+same locked environment on every pull request, and deploys to Pages only from
+`master`. A pull request therefore proves the site builds before it can publish.
 
 ## Portable local settings
 

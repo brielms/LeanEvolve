@@ -51,6 +51,9 @@ fast = [
 ]
 audit = [
   ["python", "scripts/release_audit.py"],
+  # The published documentation is generated from these sources; a broken link
+  # is a release defect, not a cosmetic one.
+  ["python", "scripts/build_docs.py", "--check"],
 ]
 
 [[lean.project]]

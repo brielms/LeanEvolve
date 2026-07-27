@@ -1,8 +1,11 @@
 # LeanEvolve
 
 [![Lean 4](https://img.shields.io/badge/Lean-4.32.1-0f766e)](https://lean-lang.org/)
-[![proofs-kernel_checked-16a34a](https://img.shields.io/badge/proofs-kernel__checked-16a34a)](docs/architecture.html)
+[![proofs-kernel_checked-16a34a](https://img.shields.io/badge/proofs-kernel__checked-16a34a)](https://brielms.github.io/LeanEvolve/architecture.html)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+
+**Documentation: <https://brielms.github.io/LeanEvolve/>** — generated from the
+sources in this repository and stamped with the commit it was built from.
 
 LeanEvolve is a small, auditable bridge between
 [ShinkaEvolve](https://github.com/SakanaAI/ShinkaEvolve) and Lean 4. A model may
@@ -30,7 +33,8 @@ be replayed from hash-pinned inputs.
 - a tiny end-to-end example and tests, including a real Lean kernel check.
 
 The trust boundary, module map, data flow, run artifacts, and current limitations are
-in the self-contained [architecture document](docs/architecture.html).
+in the self-contained
+[architecture document](https://brielms.github.io/LeanEvolve/architecture.html).
 
 ## Install and diagnose
 
@@ -93,9 +97,10 @@ mise run replay -- --run-dir runs/<campaign-id>
 ```
 
 `mise run menu` is the detailed workflow catalog, including inputs, outputs, cost,
-runtime, and examples. See [the workflow guide](docs/workflows.md) for configuration,
-portable storage profiles, receipts, exit codes, and the boundary between mise, uv,
-Lake, and the underlying library commands.
+runtime, and examples. See
+[the workflow guide](https://brielms.github.io/LeanEvolve/workflows.html) for
+configuration, portable storage profiles, receipts, exit codes, and the boundary
+between mise, uv, Lake, and the underlying library commands.
 
 ## Configure a proof search
 
@@ -170,7 +175,7 @@ Each run records:
 - the parent-linked frontier selected from Shinka's run database;
 - a final result inventory.
 
-`leanevolve-replay` verifies the stored inventory first, rebuilds the snapshotted
+`mise run replay` verifies the stored inventory first, rebuilds the snapshotted
 Lean project, reevaluates candidates, and fails if accepted goals differ. The model
 does not need to be available for replay.
 
@@ -179,8 +184,13 @@ does not need to be available for replay.
 ```bash
 mise run test
 mise run lint
+mise run docs
 mise run audit
 ```
+
+`mise run docs` regenerates the published documentation site into `_site/` and fails
+on any link that would not resolve once GitHub Pages serves it under `/LeanEvolve/`.
+Preview it with `python -m http.server --directory _site 8000`.
 
 The source tree intentionally keeps the evaluator small. New search features should
 remain outside the mathematical trust boundary, emit auditable artifacts, and have

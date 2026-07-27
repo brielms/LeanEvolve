@@ -106,3 +106,9 @@ run = "uv run --locked --reinstall-package lean-evolve leanevolve run evaluate"
 [tasks.paper-intake]
 description = "Add a paper as prior art (needs a [workflow.paper-intake] entry; not configured here)"
 run = "uv run --locked --reinstall-package lean-evolve leanevolve run paper-intake"
+
+[tasks.docs]
+description = "Build the public documentation site into _site/ and check every link"
+# The same command CI runs before GitHub Pages deploys, so a broken link fails
+# locally first. Preview with: python -m http.server --directory _site 8000
+run = "uv run --locked python scripts/build_docs.py --check"
