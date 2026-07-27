@@ -28,9 +28,16 @@ shinka = [
 dev = ["pytest>=8.3", "ruff>=0.9"]
 
 [project.scripts]
+leanevolve = "leanevolve.workflow.cli:entrypoint"
 leanevolve-evaluate = "leanevolve.evaluate:main"
 leanevolve-replay = "leanevolve.replay:main"
 leanevolve-run = "leanevolve.run:main"
+
+[dependency-groups]
+dev = ["pytest>=8.3", "ruff>=0.9"]
+
+[tool.uv]
+required-version = ">=0.11"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/leanevolve"]

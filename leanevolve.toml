@@ -1,0 +1,111 @@
+# LeanEvolve workflow settings.
+#
+# This file is version controlled and must stay portable: no absolute user or
+# volume paths belong here. Machine-specific values (an external artifact
+# volume, a bigger free-space reserve, a different model route) go in
+# leanevolve.local.toml, which is git-ignored and written by
+# `mise run configure`.
+#
+# The task interface reads this file. To point a task at different machinery --
+# a different campaign runner, a different Lean project, an extra gate -- edit
+# the tables below rather than the Python that dispatches them.
+
+format = "leanevolve-workflows-v1"
+
+[project]
+# Status output prints this verbatim and treats it as prose, never as evidence.
+claim = "proof-search infrastructure; kernel acceptance is the only evidence produced here"
+
+[storage]
+# Relative paths resolve against the repository root.
+artifact_root = "runs"
+cache_root = ".cache/leanevolve"
+min_free_gb = 2.0
+# Set true on a branch whose campaigns must land on an attached external volume.
+require_external = false
+
+[limits]
+# A hard ceiling, not an estimate. A workflow may request less, never more.
+max_api_costs = 5.0
+max_parallel_jobs = 1
+
+[model]
+route = "headless/codex@gpt-5.6-sol?effort=max"
+# Doctor reports only whether these are set, never their values.
+auth_env = ["OPENAI_API_KEY"]
+
+[tools]
+# Resolved and version-reported by `doctor`. Required tools fail the diagnosis.
+required = ["lake"]
+optional = ["node", "codex"]
+
+[inputs]
+# Hashed by `doctor` so a missing or swapped input is caught before a run.
+required = ["examples/demo/evolve.json", "examples/demo/seed.lean"]
+
+[checks]
+# The underlying commands stay visible here rather than hidden in task code.
+fast = [
+  ["ruff", "check", "."],
+  ["pytest"],
+]
+audit = [
+  ["python", "scripts/release_audit.py"],
+]
+
+[[lean.project]]
+path = "examples/demo/lean"
+# A branch with its own axiom gate points at it here, for example
+# audit_command = ["bash", "check.sh"]
+
+[demo]
+config = "examples/demo/evolve.json"
+candidate = "examples/demo/seed.lean"
+expect_goals = ["zero_right"]
+
+[workflow.shinka]
+summary = "Run a sequential, kernel-scored proof-search campaign."
+kind = "campaign"
+command = ["leanevolve-run"]
+inputs = [
+  "a search configuration (--config), defaulting to the bundled example",
+  "an ordered schedule (--proposal-steps)",
+]
+outputs = [
+  "a campaign directory holding the run manifest, hash-linked events, every candidate, and the proof lineage",
+]
+cost = "spends model credits up to the configured hard ceiling"
+runtime = "minutes to hours, proportional to the schedule"
+example = "mise run shinka -- --proposal-steps 3"
+requires = ["lake", "shinka"]
+plan_flag = "--check-config"
+cost_flag = "--max-api-costs"
+results_flag = "--results-dir"
+model_flag = "--model"
+schedule = { flag = "--proposal-steps", style = "steps" }
+
+[workflow.shinka.defaults]
+"--config" = "examples/demo/evolve.json"
+"--proposal-steps" = "3"
+
+[workflow.replay]
+summary = "Recheck a finished campaign: inventory, lineage, and every candidate."
+kind = "verification"
+command = ["leanevolve-replay"]
+inputs = ["a campaign directory (--run-dir)"]
+outputs = ["an accept/reject verdict comparing fresh kernel results with receipts"]
+cost = "no model spend; the model need not be available"
+runtime = "proportional to the number of recorded candidates"
+example = "mise run replay -- --run-dir runs/shinka-20260727-101500-a1b2c3"
+requires = ["lake"]
+
+[workflow.evaluate]
+summary = "Evaluate one Lean candidate through the ordinary trust boundary."
+kind = "verification"
+command = ["leanevolve-evaluate"]
+inputs = ["a candidate (--program_path)", "a configuration (--config)"]
+outputs = ["metrics, feedback, and an evaluation manifest under --results_dir"]
+cost = "no model spend"
+runtime = "seconds to minutes, bounded by the configured kernel timeout"
+example = "mise run evaluate -- --program_path examples/demo/seed.lean --results_dir .cache/leanevolve/manual --config examples/demo/evolve.json"
+requires = ["lake"]

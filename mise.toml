@@ -1,0 +1,108 @@
+# LeanEvolve task interface.
+#
+# `mise tasks` is the supported menu for scientists and agents; `mise run menu`
+# prints the same menu with inputs, outputs, cost, and examples, and
+# `mise run menu -- --json` emits it as machine-readable metadata.
+#
+# Every Python-backed task runs through `uv run --locked`, so a stale lockfile
+# or an accidental system interpreter fails before any work begins, and nobody
+# has to activate an environment or know where the pinned interpreter lives.
+# The underlying commands stay visible here on purpose.
+
+[tools]
+python = "3.12.13"
+uv = "0.11.32"
+
+[env]
+# Lean is managed by elan, not by mise: Lake keeps its own incremental build and
+# its own kernel gate. This only makes the conventional elan installation
+# visible to tasks that shell out to `lake`.
+_.path = ["{{env.HOME}}/.elan/bin"]
+# Python 3.12.13 ignores hidden `.pth` files, while Hatch currently gives an
+# editable wheel a hidden path file. A regular wheel is deterministic and keeps
+# the `leanevolve` command importable on every `uv run` invocation.
+UV_NO_EDITABLE = "1"
+
+[settings]
+# The ordered solve/expansion trajectory of a campaign is scientific meaning,
+# not a scheduling detail. Task-level parallelism stays off.
+jobs = 1
+
+[tasks.setup]
+description = "Install pinned tools, sync the locked environment, and report readiness"
+run = [
+  "mise install",
+  "uv sync --locked --extra shinka",
+  "uv run --locked --reinstall-package lean-evolve leanevolve doctor",
+  "mise tasks",
+  "echo 'Ready. Next: mise run demo; mise run check'",
+]
+
+[tasks.lock]
+description = "Re-resolve uv.lock after changing dependencies in pyproject.toml"
+run = "uv lock"
+
+[tasks.menu]
+alias = "help"
+description = "Show every supported task and workflow with inputs, outputs, and cost"
+run = "uv run --locked --reinstall-package lean-evolve leanevolve menu"
+
+[tasks.doctor]
+description = "Diagnose tools, lockfile, Lean toolchain, storage, and required inputs"
+run = "uv run --locked --reinstall-package lean-evolve leanevolve doctor"
+
+[tasks.check]
+description = "Fast gate: lint, tests, and an incremental Lean build (not an audit)"
+run = "uv run --locked --reinstall-package lean-evolve leanevolve check"
+
+[tasks.test]
+description = "Run the Python test suite only"
+run = "uv run --locked --reinstall-package lean-evolve pytest"
+
+[tasks.lint]
+description = "Run the linter only"
+run = "uv run --locked --reinstall-package lean-evolve ruff check ."
+
+[tasks.audit]
+description = "Release gate: publication scan, lockfile, clean Lean rebuild, offline demo"
+run = "uv run --locked --reinstall-package lean-evolve leanevolve audit"
+
+[tasks.demo]
+description = "Offline end-to-end kernel demonstration; no model call, no credits"
+run = "uv run --locked --reinstall-package lean-evolve leanevolve demo"
+
+[tasks.status]
+description = "Report what this repository claims, derived from receipts not prose"
+run = "uv run --locked --reinstall-package lean-evolve leanevolve status"
+
+[tasks.configure]
+description = "Write machine-local storage, limit, and model overrides"
+run = "uv run --locked --reinstall-package lean-evolve leanevolve configure"
+
+[tasks.plan]
+description = "Preview an expensive workflow: schedule, cost ceiling, storage, frontier"
+run = "uv run --locked --reinstall-package lean-evolve leanevolve plan"
+
+[tasks.campaigns]
+description = "List recorded campaigns with status, goals, and recovery commands"
+run = "uv run --locked --reinstall-package lean-evolve leanevolve campaigns"
+
+[tasks.artifacts]
+description = "Report artifact and cache disk usage by category"
+run = "uv run --locked --reinstall-package lean-evolve leanevolve artifacts"
+
+[tasks.shinka]
+description = "Run a kernel-scored proof-search campaign (spends model credits)"
+run = "uv run --locked --reinstall-package lean-evolve leanevolve run shinka"
+
+[tasks.replay]
+description = "Recheck a finished campaign against its recorded receipts"
+run = "uv run --locked --reinstall-package lean-evolve leanevolve run replay"
+
+[tasks.evaluate]
+description = "Evaluate one Lean candidate through the ordinary trust boundary"
+run = "uv run --locked --reinstall-package lean-evolve leanevolve run evaluate"
+
+[tasks.paper-intake]
+description = "Add a paper as prior art (needs a [workflow.paper-intake] entry; not configured here)"
+run = "uv run --locked --reinstall-package lean-evolve leanevolve run paper-intake"

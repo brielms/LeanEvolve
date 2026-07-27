@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import importlib.metadata
+import json
 import os
 import shlex
 import subprocess
 import sys
 from pathlib import Path
 
+from leanevolve import __version__
 from leanevolve.audit import (
     append_event,
     create_run_manifest,
@@ -25,6 +28,49 @@ from leanevolve.shinka_runtime import (
 
 PINNED_SHINKA_COMMIT = "b67a07328ab7e21e999d9e20a44f4f0054a4b83c"
 MAX_MODEL = "headless/codex@gpt-5.6-sol?effort=max"
+
+
+def _program_version(program: str) -> str | None:
+    """Return one provenance-friendly version line without failing a run."""
+
+    try:
+        completed = subprocess.run(
+            [program, "--version"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode:
+        return None
+    return next(
+        (line.strip() for line in completed.stdout.splitlines() if line.strip()), None
+    )
+
+
+def _locked_environment() -> dict[str, str | None]:
+    """Record the resolved task-layer and Shinka versions in campaign provenance."""
+
+    distribution = importlib.metadata.distribution("shinka-evolve")
+    direct = distribution.read_text("direct_url.json")
+    revision = None
+    if direct:
+        try:
+            revision = (json.loads(direct).get("vcs_info") or {}).get("commit_id")
+        except json.JSONDecodeError:
+            pass
+    return {
+        "leanevolve": __version__,
+        "mise": _program_version("mise"),
+        "uv": _program_version("uv"),
+        "python": sys.version.split()[0],
+        "python_executable": str(Path(sys.executable).resolve()),
+        "shinka_evolve": distribution.version,
+        "shinka_git_commit": revision,
+    }
 
 
 def _duration(seconds: int) -> str:
@@ -200,6 +246,7 @@ def main() -> None:
             "parent_selection_strategy": "sequential",
             "inspiration_sort_order": "chronological",
             "shinka_upstream_commit": PINNED_SHINKA_COMMIT,
+            "locked_environment": _locked_environment(),
         },
         tool_inputs=sorted(Path(__file__).resolve().parent.glob("*.py")),
     )

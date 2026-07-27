@@ -12,3 +12,8 @@ build/
 .lake/
 result*/
 runs/
+.cache/
+.mise/
+leanevolve.local.toml
+/artifacts
+/tmp/

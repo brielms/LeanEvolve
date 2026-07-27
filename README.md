@@ -32,50 +32,70 @@ be replayed from hash-pinned inputs.
 The trust boundary, module map, data flow, run artifacts, and current limitations are
 in the self-contained [architecture document](docs/architecture.html).
 
-## Quick start
+## Install and diagnose
 
-Prerequisites are Python 3.11+, Git, and Lean through `elan`. Node.js and the Codex
-CLI are needed only when using the bundled headless model bridge.
+The supported interface is [mise](https://mise.jdx.dev/). It pins Python and uv,
+uses uv's checked-in lockfile for every Python command, and leaves Lean builds to
+Lake. Install Git, mise, and Lean through `elan`; Node.js and the Codex CLI are
+needed only for the bundled headless model route.
 
 ```bash
 git clone https://github.com/brielms/LeanEvolve.git
 cd LeanEvolve
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e '.[dev]'
-(cd examples/demo/lean && lake build)
+mise trust
+mise install
+mise run setup
+mise tasks
 ```
 
-Evaluate the checked-in seed without contacting a model:
+`setup` is safe to repeat. If anything is unavailable or mismatched, start with
+`mise run doctor`; its receipt gives one concrete recovery command per failure.
+No virtual-environment activation or interpreter path is part of the workflow.
+
+## Validate
+
+Run the deterministic, no-spend demonstration, then the fast edit-time gate:
 
 ```bash
-leanevolve-evaluate \
-  --program_path examples/demo/seed.lean \
-  --results_dir /tmp/leanevolve-evaluation \
-  --config examples/demo/evolve.json
-cat /tmp/leanevolve-evaluation/feedback.txt
+mise run demo
+mise run check
 ```
 
-The example closes the first goal and leaves the second goal available as useful
-search gradient. To run ShinkaEvolve, install the pinned optional dependency and
-choose a fresh results directory:
+`check` keeps Lake's incremental products. `mise run audit` is the slower release
+gate: it checks the lock, runs the publication scan, rebuilds Lean from clean, and
+re-verifies the offline demonstration. Neither command presents an open proposition
+as a proved theorem.
+
+Every important task accepts `--json`, for example
+`mise run status -- --json`. Human and JSON results are also retained under
+`.cache/leanevolve/receipts/`.
+
+## Run or preview a campaign
+
+Preview validates the configuration, storage reserve, schedule, pinned environment,
+and hard spend ceiling without creating a campaign directory or contacting a model:
 
 ```bash
-python -m pip install -e '.[shinka]'
-leanevolve-run \
-  --config examples/demo/evolve.json \
-  --results-dir runs/demo-001 \
-  --model 'headless/codex@gpt-5.6-sol?effort=max' \
-  --proposal-steps 3 \
-  --max-api-costs 5
+mise run plan -- shinka --proposal-steps 3
+mise run shinka -- --proposal-steps 3
 ```
 
-Model calls are stochastic. Verification is not. Replay every saved candidate and
-compare the fresh kernel result with its recorded receipt:
+Interactive runs ask before spending. Agents must add `--yes`, and that authorization
+is recorded: `mise run shinka -- --yes --proposal-steps 3`.
+
+Model calls are stochastic; verification is not. Inspect status and replay a saved
+campaign through the same locked environment:
 
 ```bash
-leanevolve-replay --run-dir runs/demo-001
+mise run status
+mise run campaigns
+mise run replay -- --run-dir runs/<campaign-id>
 ```
+
+`mise run menu` is the detailed workflow catalog, including inputs, outputs, cost,
+runtime, and examples. See [the workflow guide](docs/workflows.md) for configuration,
+portable storage profiles, receipts, exit codes, and the boundary between mise, uv,
+Lake, and the underlying library commands.
 
 ## Configure a proof search
 
@@ -157,9 +177,9 @@ does not need to be available for replay.
 ## Development
 
 ```bash
-python -m pytest
-python -m ruff check .
-python scripts/release_audit.py
+mise run test
+mise run lint
+mise run audit
 ```
 
 The source tree intentionally keeps the evaluator small. New search features should
