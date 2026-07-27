@@ -1,6 +1,5 @@
 # LeanEvolve
 
-[![CI](https://github.com/brielms/LeanEvolve/actions/workflows/ci.yml/badge.svg)](https://github.com/brielms/LeanEvolve/actions/workflows/ci.yml)
 [![Lean 4](https://img.shields.io/badge/Lean-4.32.1-0f766e)](https://lean-lang.org/)
 [![proofs-kernel_checked-16a34a](https://img.shields.io/badge/proofs-kernel__checked-16a34a)](docs/architecture.html)
 
