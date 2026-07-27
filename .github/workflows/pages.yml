@@ -55,11 +55,13 @@ jobs:
           version: "0.11.32"
           enable-cache: true
 
-      - name: Build the site and check every internal link
-        run: uv run --locked python scripts/build_docs.py --check
-
+      # Tests run first so the uploaded directory is always the product of the
+      # build step immediately below it and nothing else.
       - name: Verify the builder's own tests
         run: uv run --locked --extra dev pytest tests/test_build_docs.py -q
+
+      - name: Build the site and check every internal link
+        run: uv run --locked python scripts/build_docs.py --check
 
       - name: Upload the Pages artifact
         if: github.event_name != 'pull_request'

@@ -420,17 +420,24 @@ def page_title(source: Path, body_markdown: str) -> str:
 class Built:
     pages: list[str]
     commit: str
+    site: Path
 
 
-def build() -> Built:
+def build(site: Path = SITE) -> Built:
+    """Generate the site into `site`, replacing whatever is already there.
+
+    The output directory is a parameter so that callers which build only to
+    inspect the result -- the test suite in particular -- never touch the
+    `_site/` directory that CI uploads to Pages.
+    """
     commit = source_commit()
-    if SITE.exists():
-        shutil.rmtree(SITE)
-    SITE.mkdir(parents=True)
+    if site.exists():
+        shutil.rmtree(site)
+    site.mkdir(parents=True)
 
     # GitHub Pages runs Jekyll over an artifact unless told otherwise; this
     # site is already complete HTML.
-    (SITE / ".nojekyll").write_text("", encoding="utf-8")
+    (site / ".nojekyll").write_text("", encoding="utf-8")
 
     pages: list[str] = []
 
@@ -441,7 +448,7 @@ def build() -> Built:
         text = source.read_text(encoding="utf-8")
         body = render_markdown(text, commit)
         markup = page(page_title(source, text), body, target, commit)
-        (SITE / target).write_text(markup, encoding="utf-8")
+        (site / target).write_text(markup, encoding="utf-8")
         pages.append(target)
 
     for name in COPIED:
@@ -457,21 +464,22 @@ def build() -> Built:
             f'<meta name="leanevolve-source-commit" content="{commit}"></head>',
             1,
         )
-        (SITE / name).write_text(markup, encoding="utf-8")
+        (site / name).write_text(markup, encoding="utf-8")
         pages.append(name)
 
-    return Built(pages=sorted(pages), commit=commit)
+    return Built(pages=sorted(pages), commit=commit, site=site)
 
 
 def check(built: Built) -> list[str]:
     """Verify that every internal link resolves inside the built site."""
     problems: list[str] = []
+    site = built.site
 
-    if not (SITE / "index.html").is_file():
+    if not (site / "index.html").is_file():
         problems.append("no index.html: the site root would return 404")
 
     for name in built.pages:
-        page_file = SITE / name
+        page_file = site / name
         if not page_file.is_file():
             problems.append(f"{name}: expected page is missing from the site")
             continue
@@ -482,7 +490,7 @@ def check(built: Built) -> list[str]:
             target = value.split("#", 1)[0]
             if not target:
                 continue
-            if not (SITE / target).exists():
+            if not (site / target).exists():
                 problems.append(
                     f"{name}: {attribute}=\"{value}\" does not resolve in the site"
                 )
@@ -517,7 +525,7 @@ def main(argv: list[str] | None = None) -> int:
         print("recovery: fix the reported source, then rerun mise run docs")
         return EXIT_USAGE
 
-    relative = SITE.relative_to(ROOT)
+    relative = built.site.relative_to(ROOT)
     print(f"built {len(built.pages)} pages into {relative}/ at {built.commit[:12]}")
     for name in built.pages:
         print(f"  {relative}/{name}")

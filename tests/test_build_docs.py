@@ -138,22 +138,52 @@ def test_badge_links_survive_rewriting() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_repository_site_builds_and_every_link_resolves() -> None:
-    built = build_docs.build()
+# Every test builds into its own directory. The real `_site/` is the artifact
+# CI uploads to Pages, and a test that mutated it -- or left a deliberately
+# failed build behind -- would publish a broken site.
+
+
+@pytest.fixture
+def site(tmp_path: Path) -> Path:
+    return tmp_path / "_site"
+
+
+def test_repository_site_builds_and_every_link_resolves(site: Path) -> None:
+    built = build_docs.build(site)
     assert "index.html" in built.pages, "no index.html means the site root 404s"
-    assert (build_docs.SITE / ".nojekyll").is_file()
+    assert sorted(built.pages) == ["architecture.html", "index.html", "workflows.html"]
+    assert (site / ".nojekyll").is_file()
     assert build_docs.check(built) == []
 
 
-def test_site_records_the_commit_it_was_built_from() -> None:
-    built = build_docs.build()
-    markup = (build_docs.SITE / "index.html").read_text(encoding="utf-8")
+def test_every_declared_page_reaches_the_built_site(site: Path) -> None:
+    # The artifact is uploaded from the directory, not from the page list, so
+    # each declared page must exist on disk when the build returns.
+    built = build_docs.build(site)
+    for name in built.pages:
+        assert (site / name).is_file(), f"{name} would be missing from the artifact"
+
+
+def test_building_does_not_touch_the_published_site_directory(site: Path) -> None:
+    marker = build_docs.SITE / "sentinel.txt"
+    build_docs.SITE.mkdir(parents=True, exist_ok=True)
+    marker.write_text("kept", encoding="utf-8")
+    try:
+        build_docs.build(site)
+        assert marker.is_file(), "a build into another directory cleared _site/"
+    finally:
+        marker.unlink(missing_ok=True)
+
+
+def test_site_records_the_commit_it_was_built_from(site: Path) -> None:
+    built = build_docs.build(site)
+    markup = (site / "index.html").read_text(encoding="utf-8")
     assert f'content="{built.commit}"' in markup
 
 
-def test_check_rejects_a_link_that_would_404() -> None:
-    built = build_docs.build()
-    page = build_docs.SITE / "index.html"
+def test_check_rejects_a_link_that_would_404(site: Path) -> None:
+    built = build_docs.build(site)
+    page = site / "index.html"
     page.write_text(
         page.read_text(encoding="utf-8").replace(
             '<a href="workflows.html">', '<a href="missing-page.html">', 1
@@ -164,9 +194,9 @@ def test_check_rejects_a_link_that_would_404() -> None:
     assert any("missing-page.html" in problem for problem in problems)
 
 
-def test_check_rejects_a_published_raw_markdown_link() -> None:
-    built = build_docs.build()
-    page = build_docs.SITE / "index.html"
+def test_check_rejects_a_published_raw_markdown_link(site: Path) -> None:
+    built = build_docs.build(site)
+    page = site / "index.html"
     markup = page.read_text(encoding="utf-8")
     page.write_text(
         markup.replace("<body>", '<body><a href="workflows.md">drifted</a>', 1),
@@ -176,16 +206,23 @@ def test_check_rejects_a_published_raw_markdown_link() -> None:
     assert any("workflows.md" in problem for problem in problems)
 
 
-def test_check_rejects_a_site_without_an_index() -> None:
-    built = build_docs.build()
-    (build_docs.SITE / "index.html").unlink()
+def test_check_rejects_a_site_without_an_index(site: Path) -> None:
+    built = build_docs.build(site)
+    (site / "index.html").unlink()
     problems = build_docs.check(built)
     assert any("404" in problem for problem in problems)
 
 
+def test_check_rejects_a_page_missing_from_the_site(site: Path) -> None:
+    built = build_docs.build(site)
+    (site / "architecture.html").unlink()
+    problems = build_docs.check(built)
+    assert any("architecture.html" in problem for problem in problems)
+
+
 def test_missing_documentation_source_is_a_build_error(
-    monkeypatch: pytest.MonkeyPatch,
+    site: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setitem(build_docs.RENDERED, "gone.html", "docs/not-a-real-file.md")
     with pytest.raises(build_docs.BuildError):
-        build_docs.build()
+        build_docs.build(site)
