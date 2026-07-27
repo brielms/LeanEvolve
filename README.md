@@ -2,6 +2,7 @@
 
 [![Lean 4](https://img.shields.io/badge/Lean-4.32.1-0f766e)](https://lean-lang.org/)
 [![proofs-kernel_checked-16a34a](https://img.shields.io/badge/proofs-kernel__checked-16a34a)](docs/architecture.html)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 LeanEvolve is a small, auditable bridge between
 [ShinkaEvolve](https://github.com/SakanaAI/ShinkaEvolve) and Lean 4. A model may
@@ -28,8 +29,8 @@ be replayed from hash-pinned inputs.
   revision;
 - a tiny end-to-end example and tests, including a real Lean kernel check.
 
-The visual trust model and artifact flow are in the self-contained
-[architecture document](docs/architecture.html).
+The trust boundary, module map, data flow, run artifacts, and current limitations are
+in the self-contained [architecture document](docs/architecture.html).
 
 ## Quick start
 

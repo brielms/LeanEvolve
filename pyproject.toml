@@ -9,6 +9,8 @@ description = "Kernel-scored Lean proof discovery with ShinkaEvolve"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "LeanEvolve contributors" }]
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",

@@ -137,7 +137,10 @@ def run_kernel(
     for goal in config.goals:
         audit_path = results_dir / f"candidate_audit_{goal.name}.lean"
         audit_path.write_text(
-            source.rstrip() + "\n\n" + f"#print axioms {goal.declaration}\n",
+            source.rstrip()
+            + "\n\n"
+            + f"example : {goal.target_type} := {goal.declaration}\n"
+            + f"#print axioms {goal.declaration}\n",
             encoding="utf-8",
         )
         audit_returncode, audit_output = invoke(audit_path)

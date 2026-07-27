@@ -55,6 +55,28 @@ def test_formal_extension_closes_both_goals(tmp_path: Path, lean_config) -> None
     assert result.accepted_goals == ("zero_right", "addition_commutes")
 
 
+def test_wrong_statement_under_expected_name_gets_no_credit(
+    tmp_path: Path, lean_config
+) -> None:
+    candidate = tmp_path / "candidate.lean"
+    candidate.write_text(
+        (DEMO / "seed.lean")
+        .read_text(encoding="utf-8")
+        .replace(
+            "theorem zero_right : Demo.ZeroRightTarget := by\n"
+            "  intro n\n"
+            "  simp",
+            "theorem zero_right : True := by\n"
+            "  trivial",
+        ),
+        encoding="utf-8",
+    )
+    result = evaluate(candidate, lean_config, tmp_path / "results")
+    assert not result.correct
+    assert result.accepted_goals == ()
+    assert "type mismatch" in result.feedback.lower()
+
+
 def test_placeholder_never_reaches_kernel_credit(tmp_path: Path, lean_config) -> None:
     candidate = tmp_path / "candidate.lean"
     candidate.write_text(
