@@ -1,0 +1,39 @@
+{
+  "format": "leanevolve-config-v1",
+  "lean_project": "lean",
+  "seed": "seed.lean",
+  "prompt": "prompt.md",
+  "candidate": {
+    "max_bytes": 1048576
+  },
+  "kernel": {
+    "allowed_axioms": [
+      "Classical.choice",
+      "Quot.sound",
+      "propext"
+    ],
+    "timeout_seconds": 120,
+    "warning_as_error": true,
+    "sandbox_prefix": []
+  },
+  "goals": [
+    {
+      "name": "zero_right",
+      "declaration": "Evolved.zero_right",
+      "target_type": "Demo.ZeroRightTarget",
+      "weight": 10,
+      "depends_on": [],
+      "description": "A small seed theorem that demonstrates kernel-derived fitness."
+    },
+    {
+      "name": "addition_commutes",
+      "declaration": "Evolved.addition_commutes",
+      "target_type": "Demo.AdditionCommutesTarget",
+      "weight": 25,
+      "depends_on": [
+        "zero_right"
+      ],
+      "description": "The next attainable theorem; the checked-in seed leaves it open."
+    }
+  ]
+}

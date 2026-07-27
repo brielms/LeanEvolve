@@ -1,0 +1,658 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="LeanEvolve trust boundary and replay architecture">
+  <title>LeanEvolve · Trust Architecture</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #f5f7f4;
+      --muted: #a9b6b0;
+      --night: #07110f;
+      --panel: rgba(16, 32, 28, 0.84);
+      --panel-2: rgba(10, 23, 20, 0.9);
+      --line: rgba(161, 197, 179, 0.18);
+      --mint: #88f0bf;
+      --mint-2: #38c98b;
+      --amber: #f5bd67;
+      --coral: #ff8c78;
+      --blue: #86bdfc;
+      --shadow: 0 24px 80px rgba(0, 0, 0, 0.34);
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 8% 0%, rgba(56, 201, 139, 0.14), transparent 34rem),
+        radial-gradient(circle at 98% 22%, rgba(134, 189, 252, 0.1), transparent 32rem),
+        var(--night);
+      line-height: 1.6;
+    }
+
+    body::before {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      content: "";
+      opacity: 0.16;
+      background-image:
+        linear-gradient(var(--line) 1px, transparent 1px),
+        linear-gradient(90deg, var(--line) 1px, transparent 1px);
+      background-size: 42px 42px;
+      mask-image: linear-gradient(to bottom, black, transparent 80%);
+    }
+
+    a { color: var(--mint); }
+
+    .shell {
+      width: min(1180px, calc(100% - 40px));
+      margin: 0 auto;
+    }
+
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 24px 0;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+
+    .brand {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      color: var(--ink);
+      font-weight: 760;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-mark {
+      display: grid;
+      width: 30px;
+      height: 30px;
+      place-items: center;
+      border: 1px solid rgba(136, 240, 191, 0.44);
+      border-radius: 9px;
+      color: var(--mint);
+      background: rgba(136, 240, 191, 0.08);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .nav-links { display: flex; gap: 24px; }
+    .nav-links a { color: inherit; text-decoration: none; }
+    .nav-links a:hover { color: var(--ink); }
+
+    header { padding: 82px 0 72px; }
+
+    .eyebrow,
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid rgba(136, 240, 191, 0.24);
+      border-radius: 999px;
+      color: var(--mint);
+      background: rgba(136, 240, 191, 0.07);
+      font-size: 0.74rem;
+      font-weight: 720;
+      letter-spacing: 0.11em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow { padding: 7px 12px; }
+    .eyebrow::before {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      content: "";
+      background: var(--mint);
+      box-shadow: 0 0 16px var(--mint);
+    }
+
+    h1 {
+      max-width: 900px;
+      margin: 26px 0 20px;
+      font-size: clamp(3.25rem, 8vw, 7.4rem);
+      font-weight: 780;
+      letter-spacing: -0.075em;
+      line-height: 0.92;
+    }
+
+    h1 span {
+      color: transparent;
+      background: linear-gradient(110deg, var(--mint) 5%, #dcffec 52%, var(--blue));
+      background-clip: text;
+    }
+
+    .lede {
+      max-width: 720px;
+      margin: 0;
+      color: var(--muted);
+      font-size: clamp(1.05rem, 2vw, 1.28rem);
+    }
+
+    .promise {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 28px;
+      align-items: center;
+      margin-top: 42px;
+      padding: 22px 24px;
+      border: 1px solid rgba(136, 240, 191, 0.24);
+      border-radius: 18px;
+      background: linear-gradient(105deg, rgba(56, 201, 139, 0.12), rgba(134, 189, 252, 0.04));
+      box-shadow: var(--shadow);
+    }
+
+    .promise strong { color: var(--mint); }
+    .promise p { margin: 0; }
+
+    .kernel-seal {
+      display: grid;
+      width: 82px;
+      height: 82px;
+      place-items: center;
+      border: 1px solid rgba(136, 240, 191, 0.42);
+      border-radius: 50%;
+      color: var(--mint);
+      background: rgba(7, 17, 15, 0.68);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.65rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-align: center;
+      text-transform: uppercase;
+      box-shadow: inset 0 0 22px rgba(136, 240, 191, 0.08);
+    }
+
+    section { padding: 76px 0; }
+
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(280px, 0.68fr);
+      gap: 60px;
+      align-items: end;
+      margin-bottom: 34px;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: clamp(2rem, 4.8vw, 4.2rem);
+      letter-spacing: -0.055em;
+      line-height: 1;
+    }
+
+    .section-head p { margin: 0; color: var(--muted); }
+
+    .trust-map {
+      position: relative;
+      display: grid;
+      grid-template-columns: 1fr 84px 1fr;
+      gap: 18px;
+      padding: 24px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background: var(--panel-2);
+      box-shadow: var(--shadow);
+    }
+
+    .lane {
+      min-height: 420px;
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    .lane.untrusted { border-color: rgba(245, 189, 103, 0.22); }
+    .lane.trusted { border-color: rgba(136, 240, 191, 0.28); }
+
+    .lane h3 { margin: 14px 0 6px; font-size: 1.45rem; }
+    .lane > p { margin: 0 0 24px; color: var(--muted); }
+
+    .pill { padding: 5px 9px; }
+    .pill.amber {
+      border-color: rgba(245, 189, 103, 0.3);
+      color: var(--amber);
+      background: rgba(245, 189, 103, 0.07);
+    }
+
+    .stack { display: grid; gap: 10px; }
+
+    .stack-item {
+      display: grid;
+      grid-template-columns: 34px 1fr;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      color: #d8e1dd;
+      background: rgba(0, 0, 0, 0.16);
+      font-size: 0.9rem;
+    }
+
+    .stack-item b {
+      display: grid;
+      width: 30px;
+      height: 30px;
+      place-items: center;
+      border-radius: 8px;
+      color: var(--blue);
+      background: rgba(134, 189, 252, 0.08);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.72rem;
+    }
+
+    .boundary {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 0.68rem;
+      font-weight: 750;
+      letter-spacing: 0.12em;
+      text-align: center;
+      text-transform: uppercase;
+    }
+
+    .boundary-line {
+      width: 1px;
+      height: 250px;
+      background: linear-gradient(transparent, var(--mint), transparent);
+      box-shadow: 0 0 18px rgba(136, 240, 191, 0.45);
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    .flow-step {
+      position: relative;
+      min-height: 150px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--panel);
+    }
+
+    .flow-step:not(:last-child)::after {
+      position: absolute;
+      top: 50%;
+      right: -18px;
+      z-index: 2;
+      color: var(--mint);
+      content: "→";
+      transform: translateY(-50%);
+    }
+
+    .flow-step .num {
+      color: var(--mint);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.72rem;
+    }
+
+    .flow-step h3 { margin: 16px 0 7px; font-size: 1.02rem; }
+    .flow-step p { margin: 0; color: var(--muted); font-size: 0.82rem; }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+    }
+
+    .card {
+      padding: 26px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: var(--panel);
+    }
+
+    .card-icon {
+      display: grid;
+      width: 40px;
+      height: 40px;
+      place-items: center;
+      border: 1px solid rgba(134, 189, 252, 0.22);
+      border-radius: 11px;
+      color: var(--blue);
+      background: rgba(134, 189, 252, 0.07);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.72rem;
+    }
+
+    .card h3 { margin: 20px 0 8px; font-size: 1.16rem; }
+    .card p { margin: 0; color: var(--muted); font-size: 0.92rem; }
+
+    .artifact-list {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      overflow: hidden;
+      background: var(--panel-2);
+    }
+
+    .artifact {
+      display: grid;
+      grid-template-columns: 170px 1fr;
+      gap: 18px;
+      min-height: 118px;
+      padding: 24px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .artifact:nth-child(odd) { border-right: 1px solid var(--line); }
+    .artifact:nth-last-child(-n + 2) { border-bottom: 0; }
+    .artifact code { color: var(--mint); font-size: 0.8rem; }
+    .artifact p { margin: 0; color: var(--muted); font-size: 0.86rem; }
+
+    .acceptance {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 38px;
+      padding: 38px;
+      border: 1px solid rgba(136, 240, 191, 0.25);
+      border-radius: 26px;
+      background: linear-gradient(120deg, rgba(56, 201, 139, 0.1), rgba(16, 32, 28, 0.72));
+      box-shadow: var(--shadow);
+    }
+
+    .acceptance h2 { font-size: clamp(2rem, 4vw, 3.5rem); }
+    .acceptance p { color: var(--muted); }
+
+    pre {
+      margin: 0;
+      padding: 24px;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      color: #d9fbe8;
+      background: rgba(0, 0, 0, 0.32);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.83rem;
+      line-height: 1.7;
+    }
+
+    .checks { display: grid; gap: 12px; margin-top: 22px; }
+    .check { display: flex; gap: 10px; color: #dbe7e1; font-size: 0.9rem; }
+    .check::before { color: var(--mint); content: "✓"; font-weight: 900; }
+
+    footer {
+      display: flex;
+      justify-content: space-between;
+      padding: 48px 0 64px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    @media (max-width: 860px) {
+      .section-head,
+      .acceptance { grid-template-columns: 1fr; }
+      .trust-map { grid-template-columns: 1fr; }
+      .boundary { flex-direction: row; padding: 8px; }
+      .boundary-line { width: 70%; height: 1px; }
+      .flow { grid-template-columns: 1fr; }
+      .flow-step:not(:last-child)::after {
+        top: auto;
+        right: 50%;
+        bottom: -22px;
+        content: "↓";
+        transform: translateX(50%);
+      }
+      .grid-3,
+      .artifact-list { grid-template-columns: 1fr; }
+      .artifact,
+      .artifact:nth-child(odd) { border-right: 0; border-bottom: 1px solid var(--line); }
+      .artifact:last-child { border-bottom: 0; }
+    }
+
+    @media (max-width: 560px) {
+      .shell { width: min(100% - 24px, 1180px); }
+      .nav-links { display: none; }
+      header { padding-top: 54px; }
+      h1 { font-size: 3.6rem; }
+      .promise { grid-template-columns: 1fr; }
+      .kernel-seal { width: 64px; height: 64px; }
+      .artifact { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <nav aria-label="Architecture navigation">
+      <div class="brand"><span class="brand-mark">λ</span> LeanEvolve</div>
+      <div class="nav-links">
+        <a href="#boundary">Boundary</a>
+        <a href="#flow">Flow</a>
+        <a href="#evidence">Evidence</a>
+        <a href="#acceptance">Acceptance</a>
+      </div>
+    </nav>
+
+    <header>
+      <div class="eyebrow">Trust architecture · v1</div>
+      <h1>Ideas evolve.<br><span>Proofs verify.</span></h1>
+      <p class="lede">
+        LeanEvolve turns open-ended model search into a narrow stream of formal
+        candidates. Search may be creative, stochastic, and wrong. Acceptance is
+        deterministic: named declarations must survive Lean and an explicit axiom
+        policy.
+      </p>
+      <div class="promise">
+        <p>
+          <strong>One asymmetry governs the system.</strong> Untrusted components may
+          propose anything; they cannot award themselves a single point of verified
+          progress.
+        </p>
+        <div class="kernel-seal">kernel<br>accepted</div>
+      </div>
+    </header>
+
+    <main>
+      <section id="boundary">
+        <div class="section-head">
+          <h2>A bright line through the stack.</h2>
+          <p>
+            The orchestration side can fail noisily without changing mathematical
+            truth. The verification side is deliberately small, pinned, and replayed.
+          </p>
+        </div>
+
+        <div class="trust-map">
+          <article class="lane untrusted">
+            <span class="pill amber">Untrusted discovery</span>
+            <h3>Generate and navigate</h3>
+            <p>Useful for finding proof structure. Never accepted as evidence itself.</p>
+            <div class="stack">
+              <div class="stack-item"><b>01</b><span>ShinkaEvolve selection</span></div>
+              <div class="stack-item"><b>02</b><span>Language-model proposals</span></div>
+              <div class="stack-item"><b>03</b><span>Prompts and research memory</span></div>
+              <div class="stack-item"><b>04</b><span>Python ranking and scheduling</span></div>
+              <div class="stack-item"><b>05</b><span>Human steering and interpretation</span></div>
+            </div>
+          </article>
+
+          <div class="boundary" aria-label="Trust boundary">
+            <span>trust<br>boundary</span>
+            <div class="boundary-line"></div>
+          </div>
+
+          <article class="lane trusted">
+            <span class="pill">Verification inputs</span>
+            <h3>Check and attest</h3>
+            <p>Small enough to identify, hash, rebuild, and independently replay.</p>
+            <div class="stack">
+              <div class="stack-item"><b>A</b><span>Formal statement snapshot</span></div>
+              <div class="stack-item"><b>B</b><span>Allowed-axiom policy</span></div>
+              <div class="stack-item"><b>C</b><span>Pinned Lean toolchain</span></div>
+              <div class="stack-item"><b>D</b><span>Declaration receipt parser</span></div>
+              <div class="stack-item"><b>E</b><span>Lean elaborator and kernel</span></div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="flow">
+        <div class="section-head">
+          <h2>From proposal to frontier.</h2>
+          <p>
+            Every transition emits a durable artifact. The final frontier is a chain
+            of candidate sources and kernel receipts, not a story about what the model
+            intended.
+          </p>
+        </div>
+
+        <div class="flow">
+          <article class="flow-step">
+            <span class="num">01 / SPEC</span>
+            <h3>Pin goals</h3>
+            <p>JSON names declarations, weights, dependencies, limits, and axioms.</p>
+          </article>
+          <article class="flow-step">
+            <span class="num">02 / PROPOSE</span>
+            <h3>Edit Lean</h3>
+            <p>Shinka supplies a parent; a model edits the bounded evolution block.</p>
+          </article>
+          <article class="flow-step">
+            <span class="num">03 / CHECK</span>
+            <h3>Run kernel</h3>
+            <p>The complete file elaborates, then each configured declaration is audited.</p>
+          </article>
+          <article class="flow-step">
+            <span class="num">04 / SCORE</span>
+            <h3>Credit proofs</h3>
+            <p>Only safe declarations whose prerequisites closed contribute weight.</p>
+          </article>
+          <article class="flow-step">
+            <span class="num">05 / BIND</span>
+            <h3>Record lineage</h3>
+            <p>Parent, source, receipt, model exchange, and frontier are hash-bound.</p>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <div class="section-head">
+          <h2>Three kinds of reproducibility.</h2>
+          <p>
+            Re-running a stochastic search is neither necessary nor sufficient.
+            LeanEvolve preserves the layers that matter separately.
+          </p>
+        </div>
+        <div class="grid-3">
+          <article class="card">
+            <div class="card-icon">SRC</div>
+            <h3>Input identity</h3>
+            <p>
+              Formal sources, configuration, prompt, and seed are copied into a
+              portable snapshot and represented by SHA-256 records.
+            </p>
+          </article>
+          <article class="card">
+            <div class="card-icon">WHY</div>
+            <h3>Discovery lineage</h3>
+            <p>
+              Parent links and proposal artifacts explain which accepted frontier a
+              generation extended and what new declarations it closed.
+            </p>
+          </article>
+          <article class="card">
+            <div class="card-icon">QED</div>
+            <h3>Verification replay</h3>
+            <p>
+              A clean command rebuilds the snapshot and compares fresh kernel results
+              with the saved declaration receipts—without calling the model.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section id="evidence">
+        <div class="section-head">
+          <h2>The evidence bundle.</h2>
+          <p>
+            Human-readable enough to inspect, structured enough to verify, and explicit
+            about what each file can—and cannot—establish.
+          </p>
+        </div>
+        <div class="artifact-list">
+          <article class="artifact">
+            <code>run_manifest.json</code>
+            <p>Configuration, platform, input records, run status, and final inventory.</p>
+          </article>
+          <article class="artifact">
+            <code>events.jsonl</code>
+            <p>Append-only lifecycle events; each line commits to the preceding line.</p>
+          </article>
+          <article class="artifact">
+            <code>gen_N/main.lean</code>
+            <p>The exact complete candidate supplied to the formal acceptance gate.</p>
+          </article>
+          <article class="artifact">
+            <code>evaluation_manifest.json</code>
+            <p>Candidate and project hashes, axiom receipts, metrics, and toolchain.</p>
+          </article>
+          <article class="artifact">
+            <code>proof_lineage.json</code>
+            <p>Content-addressed parent nodes and the strongest recorded frontier path.</p>
+          </article>
+          <article class="artifact">
+            <code>input_snapshot/</code>
+            <p>Portable copies of the formal project, prompt, seed, and configuration.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="acceptance">
+        <div class="acceptance">
+          <div>
+            <h2>Success ends in one boring command.</h2>
+            <p>
+              Discovery can be adventurous. Verification should be wonderfully dull:
+              inspect hashes, rebuild inputs, run Lean, compare receipts, exit zero.
+            </p>
+            <div class="checks">
+              <div class="check">No model call participates in replay</div>
+              <div class="check">No placeholder or custom assumption enters credit</div>
+              <div class="check">No manually inspected step is required for acceptance</div>
+              <div class="check">Any byte-level tampering changes the audit result</div>
+            </div>
+          </div>
+          <pre aria-label="Replay command"><code>$ leanevolve-replay \
+    --run-dir runs/example
+
+inventory .......... verified
+event chain ........ verified
+parent lineage ..... verified
+kernel receipts .... reproduced
+
+Replay accepted.</code></pre>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>LeanEvolve · kernel-scored proof discovery</span>
+      <span>Search broadly. Accept narrowly.</span>
+    </footer>
+  </div>
+</body>
+</html>
