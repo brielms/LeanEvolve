@@ -52,9 +52,25 @@ solve/field-expansion chunk schedules belong to campaign adapters that declare a
 `chunks` schedule in `leanevolve.toml`; the parser preserves each solve and expansion
 epoch in order and never uses mise job parallelism to alter that trajectory.
 
+### Spotlight sprints
+
+A Spotlight is a short solve schedule focused on one frozen intermediate goal:
+
+```bash
+leanevolve plan <project-workflow> --spotlight 'intermediate_goal for 3 turns'
+leanevolve run <project-workflow> --yes -- \
+  --spotlight 'intermediate_goal for 3 turns'
+```
+
+The project adapter supplies the goal graph and kernel-backed relevance path.
+The framework freezes the exact target statement, keeps the full field visible,
+records incidental accepted goals, and permits only `proved`, `refuted`, or
+`unresolved` as the sprint outcome. Exhausting the turn budget is always
+`unresolved`; it is never evidence of refutation.
+
 ## Documentation site
 
-<https://brielms.github.io/LeanEvolve/> is generated from this repository, never
+The configured GitHub Pages site is generated from this repository, never
 hand-maintained: `index.html` is rendered from `README.md`, this page from
 `docs/workflows.md`, and the architecture page is copied from `docs/architecture.html`.
 
@@ -78,17 +94,25 @@ same locked environment on every pull request, and deploys to Pages only from
 ## Portable local settings
 
 Version-controlled scientific defaults live in `leanevolve.toml`. Machine-specific
-paths and limits belong in the ignored `leanevolve.local.toml`:
+paths, ledger locations, and limits belong in the ignored
+`leanevolve.local.toml`:
 
 ```bash
 mise run configure -- --artifact-root /mounted/evidence/runs
 mise run configure -- --cache-root /local/fast-cache
+mise run configure -- --ledger-database /mounted/evidence/research.sqlite3 \
+  --ledger-artifacts /mounted/evidence/ledger-artifacts
 mise run configure
 ```
 
-The first two commands write overrides; the last prints effective settings. The
+The first three commands write overrides; the last prints effective settings. The
 resolved absolute paths, storage reserve, filesystem location, tool versions, and
 input hashes are retained in task or campaign receipts.
+
+The ledger paths are an all-or-nothing pair. A project opts into fail-closed
+cutover by listing workflow names under `ledger.required_workflows` in the
+version-controlled settings. Those workflows then refuse to start unless the
+database and writable content-addressed artifact store are both available.
 
 ## Machine-readable output and failures
 

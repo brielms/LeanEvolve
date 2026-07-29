@@ -29,8 +29,40 @@ ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
 SITE = ROOT / "_site"
 
-REPO_SLUG = "brielms/LeanEvolve"
-SITE_URL = "https://brielms.github.io/LeanEvolve/"
+
+
+def repository_slug() -> str:
+    """Resolve ``owner/repository`` without baking an account into the template."""
+
+    configured = os.environ.get("GITHUB_REPOSITORY")
+    if configured and re.fullmatch(r"[^/\s]+/[^/\s]+", configured):
+        return configured
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(ROOT), "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return "OWNER/LeanEvolve"
+    match = re.search(
+        r"github\.com(?::|/)([^/\s]+/[^/\s]+?)(?:\.git)?$",
+        result.stdout.strip(),
+    )
+    return match.group(1) if match else "OWNER/LeanEvolve"
+
+
+def site_url(repository: str) -> str:
+    configured = os.environ.get("LEANEVOLVE_SITE_URL")
+    if configured:
+        return configured.rstrip("/") + "/"
+    owner, name = repository.split("/", 1)
+    return f"https://{owner}.github.io/{name}/"
+
+
+REPO_SLUG = repository_slug()
+SITE_URL = site_url(REPO_SLUG)
 
 # Exit classes mirror leanevolve.workflow.errors.Exit so this script fails the
 # same way as the rest of the task surface.

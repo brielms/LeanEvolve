@@ -76,8 +76,12 @@ description = "Report what this repository claims, derived from receipts not pro
 run = "uv run --locked --reinstall-package lean-evolve leanevolve status"
 
 [tasks.configure]
-description = "Write machine-local storage, limit, and model overrides"
+description = "Write machine-local storage, ledger, limit, and model overrides"
 run = "uv run --locked --reinstall-package lean-evolve leanevolve configure"
+
+[tasks.ledger]
+description = "Inspect, verify, export, or project a canonical research ledger"
+run = "uv run --locked --reinstall-package lean-evolve leanevolve-ledger"
 
 [tasks.plan]
 description = "Preview an expensive workflow: schedule, cost ceiling, storage, frontier"

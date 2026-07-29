@@ -10,6 +10,7 @@ that let it proceed, and finalizes a receipt even when interrupted.
 from __future__ import annotations
 
 import importlib.metadata
+import math
 import os
 import secrets
 import subprocess
@@ -31,8 +32,14 @@ from leanevolve.workflow.environment import (
 )
 from leanevolve.workflow.errors import Exit, WorkflowError
 from leanevolve.workflow.receipt import Receipt
-from leanevolve.workflow.schedule import Schedule, extract_schedule
-from leanevolve.workflow.settings import Settings, Workflow
+from leanevolve.workflow.schedule import (
+    SOLVE,
+    SPOTLIGHT,
+    Schedule,
+    extract_schedule,
+    parse_schedule,
+)
+from leanevolve.workflow.settings import LedgerConfig, Settings, Workflow
 
 
 def _flag_value(arguments: list[str], flag: str) -> str | None:
@@ -133,10 +140,54 @@ def require_storage(settings: Settings) -> dict[str, Any]:
     }
 
 
+def require_ledger(settings: Settings, workflow: Workflow) -> dict[str, Any] | None:
+    """Resolve the canonical ledger and fail closed for required workflows."""
+
+    ledger: LedgerConfig | None = getattr(settings, "ledger", None)
+    required = ledger is not None and workflow.name in ledger.required_workflows
+    if ledger is None or ledger.database is None or ledger.artifacts is None:
+        if required:
+            raise WorkflowError(
+                f"workflow {workflow.name!r} requires the canonical ledger",
+                exit_code=Exit.INFRASTRUCTURE,
+                remediation=(
+                    "run `leanevolve configure --ledger-database <database> "
+                    "--ledger-artifacts <directory>`"
+                ),
+            )
+        return None
+    if not ledger.database.is_file():
+        if required:
+            raise WorkflowError(
+                f"canonical ledger database is unavailable: {ledger.database}",
+                exit_code=Exit.INFRASTRUCTURE,
+                remediation=(
+                    "attach the ledger volume or correct the local configuration"
+                ),
+            )
+        return None
+    if not ledger.artifacts.is_dir() or not os.access(ledger.artifacts, os.W_OK):
+        if required:
+            raise WorkflowError(
+                "canonical ledger artifact store is unavailable: "
+                f"{ledger.artifacts}",
+                exit_code=Exit.INFRASTRUCTURE,
+                remediation=(
+                    "attach the ledger volume or correct the local configuration"
+                ),
+            )
+        return None
+    return {
+        "database": str(ledger.database.resolve()),
+        "artifacts": str(ledger.artifacts.resolve()),
+        "required": required,
+    }
+
+
 def resolve_cost_ceiling(
     settings: Settings, workflow: Workflow, arguments: list[str]
 ) -> float | None:
-    """Return the hard ceiling, rejecting any attempt to raise it."""
+    """Return the per-chunk ceiling, rejecting any attempt to raise it."""
 
     if workflow.cost_flag is None:
         return None
@@ -152,6 +203,12 @@ def resolve_cost_ceiling(
             exit_code=Exit.USAGE,
             remediation=f"pass {workflow.cost_flag} <amount>",
         ) from None
+    if not math.isfinite(value):
+        raise WorkflowError(
+            f"{workflow.cost_flag} must be finite",
+            exit_code=Exit.USAGE,
+            remediation=f"pass {workflow.cost_flag} a finite amount",
+        )
     if value < 0:
         raise WorkflowError(
             f"{workflow.cost_flag} must not be negative",
@@ -163,11 +220,21 @@ def resolve_cost_ceiling(
             f"{workflow.cost_flag} {value:g} exceeds the configured ceiling {limit:g}",
             exit_code=Exit.USAGE,
             remediation=(
-                "lower the request, or raise limits.max_api_costs in leanevolve.toml "
-                "and commit that decision"
+                "lower the request, or raise the per-chunk "
+                "limits.max_api_costs in leanevolve.toml and commit that decision"
             ),
         )
     return value
+
+
+def _model_spend_chunk_count(schedule: Schedule | None) -> int:
+    """Return how many independently budgeted model chunks will run."""
+
+    if schedule is None:
+        return 1
+    if schedule.style == SPOTLIGHT:
+        return schedule.solve_turns
+    return max(1, sum(epoch.kind in (SOLVE, SPOTLIGHT) for epoch in schedule.epochs))
 
 
 def estimate_runtime(
@@ -212,7 +279,10 @@ class Plan:
     command: tuple[str, ...]
     schedule: Schedule | None
     cost_ceiling: float | None
+    cost_ceiling_per_chunk: float | None
+    model_spend_chunk_count: int
     storage: dict[str, Any]
+    ledger: dict[str, Any] | None
     runtime_estimate: str
     runtime_reason: str | None
     inherited: dict[str, Any]
@@ -225,9 +295,12 @@ class Plan:
             "command": list(self.command),
             "schedule": None if self.schedule is None else self.schedule.as_dict(),
             "maximum_model_spend": self.cost_ceiling,
+            "maximum_model_spend_per_chunk": self.cost_ceiling_per_chunk,
+            "model_spend_chunk_count": self.model_spend_chunk_count,
             "estimated_wall_time": self.runtime_estimate,
             "estimated_wall_time_reason": self.runtime_reason,
             "storage": self.storage,
+            "ledger": self.ledger,
             "inherited_frontier": self.inherited,
             "campaign_directory": None
             if self.campaign_dir is None
@@ -239,19 +312,27 @@ class Plan:
         lines = [f"workflow:             {self.workflow.name}"]
         if self.schedule is not None:
             lines.append(f"schedule:             {self.schedule.describe()}")
-        lines.append(
-            "maximum model spend:  "
-            + (
-                "none (this workflow does not contact a model)"
-                if self.cost_ceiling is None
-                else f"{self.cost_ceiling:g} (hard ceiling)"
+        if self.cost_ceiling is None:
+            lines.append(
+                "maximum model spend:  none (this workflow does not contact a model)"
             )
-        )
+        else:
+            lines.append(
+                "maximum model spend:  "
+                f"{self.cost_ceiling:g} aggregate authorized ceiling"
+            )
+            lines.append(
+                "per model chunk:      "
+                f"{self.cost_ceiling_per_chunk:g} x "
+                f"{self.model_spend_chunk_count} chunk(s)"
+            )
         lines.append(
             "estimated wall time:  "
             + self.runtime_estimate
             + (f" -- {self.runtime_reason}" if self.runtime_reason else "")
         )
+        if self.ledger is not None:
+            lines.append(f"canonical ledger:      {self.ledger['database']}")
         free = self.storage["free_gb"]
         lines.append(
             "storage reserve:      "
@@ -286,12 +367,8 @@ def build_plan(
     require_current_lock(settings.root, resolve_tool("uv"))
     require_workflow_dependencies(workflow)
     storage = require_storage(settings)
-    schedule: Schedule | None = None
-    if workflow.schedule is not None:
-        schedule = extract_schedule(
-            workflow.schedule.flag, workflow.schedule.style, arguments
-        )
-    ceiling = resolve_cost_ceiling(settings, workflow, arguments)
+    ledger = require_ledger(settings, workflow)
+    per_chunk_ceiling = resolve_cost_ceiling(settings, workflow, arguments)
     campaign_dir = (
         campaign_directory(settings, workflow)
         if allocate_campaign and workflow.results_flag is not None
@@ -313,12 +390,32 @@ def build_plan(
                 ),
             )
         command.extend([workflow.model_flag, settings.model_route])
+    schedule: Schedule | None = None
+    spotlight_value = _flag_value(command, "--spotlight")
+    if spotlight_value is not None:
+        schedule = parse_schedule(SPOTLIGHT, spotlight_value)
+    elif workflow.schedule is not None:
+        schedule = extract_schedule(
+            workflow.schedule.flag, workflow.schedule.style, command
+        )
+    model_spend_chunk_count = _model_spend_chunk_count(schedule)
+    ceiling = (
+        None
+        if per_chunk_ceiling is None
+        else per_chunk_ceiling * model_spend_chunk_count
+    )
+    if ceiling is not None and not math.isfinite(ceiling):
+        raise WorkflowError(
+            "aggregate model-spend ceiling must be finite",
+            exit_code=Exit.USAGE,
+            remediation="lower the per-chunk cost ceiling or chunk count",
+        )
     if (
         workflow.cost_flag
-        and ceiling is not None
+        and per_chunk_ceiling is not None
         and not _has_flag(command, workflow.cost_flag)
     ):
-        command.extend([workflow.cost_flag, f"{ceiling:g}"])
+        command.extend([workflow.cost_flag, f"{per_chunk_ceiling:g}"])
     if (
         workflow.results_flag
         and campaign_dir is not None
@@ -331,7 +428,10 @@ def build_plan(
         command=tuple(command),
         schedule=schedule,
         cost_ceiling=ceiling,
+        cost_ceiling_per_chunk=per_chunk_ceiling,
+        model_spend_chunk_count=model_spend_chunk_count,
         storage=storage,
+        ledger=ledger,
         runtime_estimate=estimate,
         runtime_reason=reason,
         inherited=campaigns_module.inherited_frontier(
@@ -342,9 +442,19 @@ def build_plan(
     )
 
 
-def _execute(command: list[str], settings: Settings) -> int:
+def _execute(command: list[str], settings: Settings, workflow: Workflow) -> int:
+    environment = os.environ.copy()
+    ledger = require_ledger(settings, workflow)
+    if ledger is not None:
+        environment["LEANEVOLVE_LEDGER_DB"] = str(ledger["database"])
+        environment["LEANEVOLVE_LEDGER_ARTIFACTS"] = str(ledger["artifacts"])
     try:
-        completed = subprocess.run(command, cwd=str(settings.root), check=False)
+        completed = subprocess.run(
+            command,
+            cwd=str(settings.root),
+            env=environment,
+            check=False,
+        )
     except FileNotFoundError as error:
         raise WorkflowError(
             f"the workflow program is not installed: {command[0]}",
@@ -373,7 +483,7 @@ def run_plan(
         command = [*plan.command, workflow.plan_flag]
         receipt.say()
         receipt.say(f"  runner self-check:    {' '.join(command)}")
-        status = _execute(command, settings)
+        status = _execute(command, settings, workflow)
         receipt.step(
             "runner self-check", "ok" if status == 0 else "failed", f"exit {status}"
         )
@@ -452,7 +562,7 @@ def run_workflow(
         receipt.outputs.append(str(plan.campaign_dir))
     started = utc_now()
     try:
-        status = _execute(list(plan.command), settings)
+        status = _execute(list(plan.command), settings, workflow)
     except KeyboardInterrupt:
         receipt.status = "interrupted"
         receipt.exit_code = Exit.INTERRUPTED
@@ -486,7 +596,8 @@ def run_workflow(
             receipt.exit_code = Exit.NO_RESULT
             receipt.status = "no_result"
     receipt.guarantees = [
-        "the cost ceiling passed to the runner is the configured hard ceiling",
+        "the per-chunk ceiling passed to the runner cannot exceed configuration",
+        "aggregate authorization is derived from the recorded schedule",
         "the ordered schedule was recorded before the run began",
     ]
     receipt.not_checked = [

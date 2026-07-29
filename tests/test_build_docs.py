@@ -25,6 +25,23 @@ build_docs = _load_builder()
 COMMIT = "0" * 40
 
 
+def test_repository_identity_comes_from_the_build_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GITHUB_REPOSITORY", "example-org/example-project")
+    assert build_docs.repository_slug() == "example-org/example-project"
+
+
+def test_pages_url_has_a_project_config_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LEANEVOLVE_SITE_URL", "https://docs.example.invalid/site")
+    assert (
+        build_docs.site_url("example-org/example-project")
+        == "https://docs.example.invalid/site/"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Link rewriting: the site is served under a repository prefix, so a
 # repo-relative link that works in a clone must not be published unchanged.
@@ -110,11 +127,11 @@ def test_headings_lists_and_quotes_render() -> None:
 
 def test_angle_bracket_autolinks_become_links() -> None:
     rendered = build_docs.render_markdown(
-        "Documentation: <https://brielms.github.io/LeanEvolve/>", COMMIT
+        "Documentation: <https://example.invalid/LeanEvolve/>", COMMIT
     )
     assert (
-        '<a href="https://brielms.github.io/LeanEvolve/">'
-        "https://brielms.github.io/LeanEvolve/</a>" in rendered
+        '<a href="https://example.invalid/LeanEvolve/">'
+        "https://example.invalid/LeanEvolve/</a>" in rendered
     )
     assert "&lt;https" not in rendered
 

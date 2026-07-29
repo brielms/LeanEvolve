@@ -12,10 +12,18 @@ from __future__ import annotations
 import importlib.metadata
 import json
 import os
+import sqlite3
 from pathlib import Path
 from typing import Any
 
 from leanevolve.audit import sha256_file
+from leanevolve.ledger.projections import (
+    active_goal_statuses,
+    recovery_queue,
+    unified_status,
+)
+from leanevolve.ledger.schema import SchemaError
+from leanevolve.ledger.store import Ledger, LedgerError
 from leanevolve.run import PINNED_SHINKA_COMMIT
 from leanevolve.workflow import campaign as campaigns_module
 from leanevolve.workflow.environment import Environment, describe_environment
@@ -95,11 +103,33 @@ def _input_report(settings: Settings) -> list[dict[str, Any]]:
     return records
 
 
+def _ledger_report(settings: Settings) -> dict[str, Any]:
+    database = settings.ledger.database
+    artifacts = settings.ledger.artifacts
+    configured = database is not None and artifacts is not None
+    database_available = bool(database and database.is_file())
+    artifacts_available = bool(
+        artifacts
+        and artifacts.is_dir()
+        and os.access(artifacts, os.W_OK)
+    )
+    return {
+        "configured": configured,
+        "database": None if database is None else str(database),
+        "artifacts": None if artifacts is None else str(artifacts),
+        "database_available": database_available,
+        "artifacts_available": artifacts_available,
+        "available": configured and database_available and artifacts_available,
+        "required_workflows": list(settings.ledger.required_workflows),
+    }
+
+
 def run_doctor(settings: Settings, receipt: Receipt) -> Receipt:
     """Diagnose the environment and finish with READY or actionable failures."""
 
     environment = describe_environment(settings)
     storage = _storage_report(settings)
+    ledger = _ledger_report(settings)
     inputs = _input_report(settings)
     toolchains = _lean_toolchain_pins(settings)
     shinka = _shinka_distribution()
@@ -230,6 +260,27 @@ def run_doctor(settings: Settings, receipt: Receipt) -> Receipt:
             )
         )
 
+    receipt.say()
+    receipt.say("canonical ledger")
+    if not ledger["configured"]:
+        receipt.say("  not configured")
+    else:
+        receipt.say(
+            f"  database       {ledger['database']} "
+            f"({'ok' if ledger['database_available'] else 'unavailable'})"
+        )
+        receipt.say(
+            f"  artifacts      {ledger['artifacts']} "
+            f"({'ok' if ledger['artifacts_available'] else 'unavailable'})"
+        )
+    if ledger["required_workflows"] and not ledger["available"]:
+        failures.append(
+            (
+                "a fail-closed workflow requires an unavailable canonical ledger",
+                "configure both ledger paths or attach the ledger storage",
+            )
+        )
+
     if settings.model_auth_env:
         receipt.say()
         receipt.say("model authentication")
@@ -294,6 +345,7 @@ def run_doctor(settings: Settings, receipt: Receipt) -> Receipt:
         receipt.next_action = "mise run check"
     receipt.inputs["environment"] = environment.as_dict()
     receipt.inputs["storage"] = storage
+    receipt.inputs["ledger"] = ledger
     receipt.inputs["lean_toolchains"] = toolchains
     receipt.inputs["shinka"] = shinka
     receipt.inputs["required_inputs"] = inputs
@@ -332,6 +384,34 @@ def run_status(settings: Settings, receipt: Receipt) -> Receipt:
     shinka = _shinka_distribution()
     found = campaigns_module.discover(settings.storage.artifact_root)
     receipts = _receipt_summary(settings)
+    ledger_status: dict[str, Any] | None = None
+    ledger_recovery: dict[str, Any] | None = None
+    ledger_goal_statuses: dict[str, Any] | None = None
+    ledger_problem: str | None = None
+    if settings.ledger.database is not None:
+        try:
+            with Ledger.open(settings.ledger.database, create=False) as ledger:
+                ledger_status = unified_status(ledger)
+                ledger_recovery = recovery_queue(ledger)
+                ledger_goal_statuses = active_goal_statuses(ledger)
+        except (
+            OSError,
+            SchemaError,
+            LedgerError,
+            sqlite3.DatabaseError,
+            ValueError,
+        ) as error:
+            ledger_problem = str(error)
+        if (
+            settings.ledger.artifacts is not None
+            and not settings.ledger.artifacts.is_dir()
+        ):
+            unavailable = f"artifact store unavailable: {settings.ledger.artifacts}"
+            ledger_problem = (
+                unavailable
+                if ledger_problem is None
+                else f"{ledger_problem}; {unavailable}"
+            )
     inherited = campaigns_module.inherited_frontier(found)
 
     receipt.say("LeanEvolve status")
@@ -348,6 +428,16 @@ def run_status(settings: Settings, receipt: Receipt) -> Receipt:
         else "UNMANAGED interpreter"
     )
     receipt.say(f"environment      {lock_status}, {interpreter_status}")
+    if ledger_status is not None:
+        receipt.say()
+        receipt.say("canonical ledger")
+        receipt.say(f"  head             {ledger_status['ledger_head_hash'][:16]}")
+        receipt.say(f"  goals            {ledger_status['goal_counts']}")
+        receipt.say(f"  recovery         {len(ledger_recovery['items'])} item(s)")
+        receipt.say(f"  next             {ledger_status['safest_next_action']}")
+    elif ledger_problem is not None:
+        receipt.say()
+        receipt.say(f"canonical ledger  UNAVAILABLE -- {ledger_problem}")
 
     receipt.say()
     receipt.say("workflows")
@@ -376,11 +466,22 @@ def run_status(settings: Settings, receipt: Receipt) -> Receipt:
             receipt.say(f"  {item.name:<28} {item.status:<12} {goals}")
         if len(found) > 10:
             receipt.say(f"  ... {len(found) - 10} older campaign(s) not shown")
-    frontier_goals = (
-        ", ".join(inherited["accepted_goals"]) or "no goals"
-        if inherited["available"]
-        else None
-    )
+    if ledger_goal_statuses is not None:
+        statuses = ledger_goal_statuses["obligation_statuses"]
+        proved = sorted(name for name, value in statuses.items() if value == "proved")
+        frontier_goals = ", ".join(proved) or "no goals"
+        inherited = {
+            "available": True,
+            "campaign": "canonical-ledger",
+            "accepted_goals": proved,
+            "reason": None,
+        }
+    else:
+        frontier_goals = (
+            ", ".join(inherited["accepted_goals"]) or "no goals"
+            if inherited["available"]
+            else None
+        )
     receipt.say(
         "  inherited frontier: "
         + (
@@ -407,7 +508,9 @@ def run_status(settings: Settings, receipt: Receipt) -> Receipt:
         for item in unverified[:5]:
             receipt.say(f"  {item.name}: {item.recovery()}")
 
-    if not environment.lock.current:
+    if ledger_problem and settings.ledger.required_workflows:
+        receipt.next_action = "attach or repair the configured canonical ledger"
+    elif not environment.lock.current:
         receipt.next_action = "mise run lock"
     elif not environment.interpreter_managed:
         receipt.next_action = "mise run setup"
@@ -424,9 +527,17 @@ def run_status(settings: Settings, receipt: Receipt) -> Receipt:
         "inherited_frontier": inherited,
         "task_receipts": receipts,
         "claim": settings.claim,
+        "canonical_ledger_status": ledger_status,
+        "canonical_ledger_recovery": ledger_recovery,
+        "canonical_ledger_problem": ledger_problem,
     }
     receipt.guarantees = [
-        "campaign status is read from run manifests and proof lineage only",
+        (
+            "current mathematical status and active frontier are projected "
+            "from the canonical ledger"
+            if ledger_status is not None
+            else "campaign status is read from run manifests and proof lineage only"
+        ),
         "workflow readiness reflects resolved tools, not documentation",
     ]
     receipt.not_checked = [

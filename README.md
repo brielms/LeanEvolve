@@ -1,11 +1,12 @@
 # LeanEvolve
 
 [![Lean 4](https://img.shields.io/badge/Lean-4.32.1-0f766e)](https://lean-lang.org/)
-[![proofs-kernel_checked-16a34a](https://img.shields.io/badge/proofs-kernel__checked-16a34a)](https://brielms.github.io/LeanEvolve/architecture.html)
+[![proofs-kernel_checked-16a34a](https://img.shields.io/badge/proofs-kernel__checked-16a34a)](docs/architecture.html)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-**Documentation: <https://brielms.github.io/LeanEvolve/>** — generated from the
-sources in this repository and stamped with the commit it was built from.
+**Documentation:** [architecture](docs/architecture.html) and
+[supported workflows](docs/workflows.md). The configured Pages site is generated
+from these repository sources and stamped with the commit it was built from.
 
 LeanEvolve is a small, auditable bridge between
 [ShinkaEvolve](https://github.com/SakanaAI/ShinkaEvolve) and Lean 4. A model may
@@ -20,6 +21,14 @@ correct. A result becomes part of the verified frontier only when its declaratio
 elaborates, its dependency receipt satisfies the configured policy, and the run can
 be replayed from hash-pinned inputs.
 
+The optional canonical research ledger stores typed research objects,
+relationships, append-only events, evaluator receipts, and content-addressed
+artifacts in one auditable system. Goal boards, chronology, proof graphs,
+prior-art crosswalks, recovery queues, and status reports are disposable
+projections rather than competing sources of truth. The core is
+domain-neutral; theorem-specific corpus importers and compatibility adapters
+belong in downstream proof projects.
+
 ## What it provides
 
 - a Shinka-compatible evaluator for Lean candidate files;
@@ -28,13 +37,17 @@ be replayed from hash-pinned inputs.
 - per-evaluation receipts with source, project, configuration, and toolchain hashes;
 - hash-chained run events and a content-addressed proof-search lineage;
 - replay that rechecks saved candidates instead of replaying stochastic model calls;
+- a domain-neutral append-only research ledger with durable worker queues,
+  artifact integrity checks, deterministic export, and rebuildable projections;
+- short, frozen-objective Spotlight sprints whose exhausted budget is recorded
+  as unresolved rather than refuted;
 - a compatibility bridge for Codex `max` reasoning with the pinned ShinkaEvolve
   revision;
 - a tiny end-to-end example and tests, including a real Lean kernel check.
 
 The trust boundary, module map, data flow, run artifacts, and current limitations are
 in the self-contained
-[architecture document](https://brielms.github.io/LeanEvolve/architecture.html).
+[architecture document](docs/architecture.html).
 
 ## Install and diagnose
 
@@ -44,7 +57,7 @@ Lake. Install Git, mise, and Lean through `elan`; Node.js and the Codex CLI are
 needed only for the bundled headless model route.
 
 ```bash
-git clone https://github.com/brielms/LeanEvolve.git
+git clone <repository-url>
 cd LeanEvolve
 mise trust
 mise install
@@ -55,6 +68,19 @@ mise tasks
 `setup` is safe to repeat. If anything is unavailable or mismatched, start with
 `mise run doctor`; its receipt gives one concrete recovery command per failure.
 No virtual-environment activation or interpreter path is part of the workflow.
+
+Configure a canonical ledger on the current machine with both paths together:
+
+```bash
+mise run configure -- \
+  --ledger-database /path/to/research.sqlite3 \
+  --ledger-artifacts /path/to/ledger-artifacts
+mise run ledger -- --database /path/to/research.sqlite3 verify \
+  --artifacts /path/to/ledger-artifacts --deep
+```
+
+Projects that complete ledger cutover list workflows that must fail closed in
+`ledger.required_workflows` in `leanevolve.toml`.
 
 ## Validate
 
@@ -77,7 +103,8 @@ Every important task accepts `--json`, for example
 ## Run or preview a campaign
 
 Preview validates the configuration, storage reserve, schedule, pinned environment,
-and hard spend ceiling without creating a campaign directory or contacting a model:
+per-chunk ceiling, and aggregate spend authorization without creating a campaign
+directory or contacting a model:
 
 ```bash
 mise run plan -- shinka --proposal-steps 3
@@ -86,6 +113,11 @@ mise run shinka -- --proposal-steps 3
 
 Interactive runs ask before spending. Agents must add `--yes`, and that authorization
 is recorded: `mise run shinka -- --yes --proposal-steps 3`.
+
+Project adapters may also expose short Spotlight schedules such as
+`--spotlight 'intermediate_goal for 3 turns'`. A Spotlight freezes the exact
+objective and its relevance path while retaining the full proof field; an
+exhausted budget is recorded as unresolved, never refuted.
 
 Model calls are stochastic; verification is not. Inspect status and replay a saved
 campaign through the same locked environment:
@@ -98,7 +130,7 @@ mise run replay -- --run-dir runs/<campaign-id>
 
 `mise run menu` is the detailed workflow catalog, including inputs, outputs, cost,
 runtime, and examples. See
-[the workflow guide](https://brielms.github.io/LeanEvolve/workflows.html) for
+[the workflow guide](docs/workflows.md) for
 configuration, portable storage profiles, receipts, exit codes, and the boundary
 between mise, uv, Lake, and the underlying library commands.
 

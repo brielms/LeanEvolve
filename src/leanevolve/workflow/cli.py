@@ -189,6 +189,12 @@ def _menu(settings: Settings, receipt: Receipt) -> Receipt:
 def _configure(
     settings: Settings, receipt: Receipt, args: argparse.Namespace
 ) -> Receipt:
+    if (args.ledger_database is None) != (args.ledger_artifacts is None):
+        raise WorkflowError(
+            "--ledger-database and --ledger-artifacts must be set together",
+            exit_code=Exit.USAGE,
+            remediation="pass both ledger paths in the same configure command",
+        )
     sections: dict[str, dict[str, Any]] = {
         "storage": {
             "artifact_root": args.artifact_root,
@@ -200,6 +206,10 @@ def _configure(
             "max_parallel_jobs": args.max_parallel_jobs,
         },
         "model": {"route": args.model_route},
+        "ledger": {
+            "database": args.ledger_database,
+            "artifacts": args.ledger_artifacts,
+        },
     }
     requested = {
         key: value
@@ -216,6 +226,12 @@ def _configure(
         receipt.say(f"  limits.max_api_costs   {settings.limits.max_api_costs:g}")
         receipt.say(f"  limits.max_parallel_jobs {settings.limits.max_parallel_jobs}")
         receipt.say(f"  model.route            {settings.model_route or 'unset'}")
+        receipt.say(
+            f"  ledger.database        {settings.ledger.database or 'unset'}"
+        )
+        receipt.say(
+            f"  ledger.artifacts       {settings.ledger.artifacts or 'unset'}"
+        )
         receipt.say()
         receipt.say(
             "  overridden locally: "
@@ -233,6 +249,16 @@ def _configure(
             "max_api_costs": settings.limits.max_api_costs,
             "max_parallel_jobs": settings.limits.max_parallel_jobs,
             "model_route": settings.model_route,
+            "ledger_database": (
+                None
+                if settings.ledger.database is None
+                else str(settings.ledger.database)
+            ),
+            "ledger_artifacts": (
+                None
+                if settings.ledger.artifacts is None
+                else str(settings.ledger.artifacts)
+            ),
             "local_overrides": list(settings.local_overrides),
         }
         return receipt
@@ -361,10 +387,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     configure.add_argument("--min-free-gb", type=float, help="free-space reserve")
     configure.add_argument(
-        "--max-api-costs", type=float, help="hard model-spend ceiling"
+        "--max-api-costs", type=float, help="hard per-model-chunk spend ceiling"
     )
     configure.add_argument("--max-parallel-jobs", type=int, help="local resource limit")
     configure.add_argument("--model-route", help="default model route")
+    configure.add_argument(
+        "--ledger-database", help="canonical research-ledger SQLite database"
+    )
+    configure.add_argument(
+        "--ledger-artifacts", help="canonical content-addressed ledger artifacts"
+    )
     plan = subparsers.add_parser("plan", help="preview an expensive workflow")
     plan.add_argument("workflow")
     plan.add_argument("arguments", nargs=argparse.REMAINDER)

@@ -29,6 +29,7 @@ dev = ["pytest>=8.3", "ruff>=0.9"]
 
 [project.scripts]
 leanevolve = "leanevolve.workflow.cli:entrypoint"
+leanevolve-ledger = "leanevolve.ledger.cli:main"
 leanevolve-evaluate = "leanevolve.evaluate:main"
 leanevolve-replay = "leanevolve.replay:main"
 leanevolve-run = "leanevolve.run:main"

@@ -10,6 +10,7 @@ absolute paths that were actually resolved.
 
 from __future__ import annotations
 
+import math
 import shutil
 import tomllib
 from dataclasses import dataclass, field
@@ -21,7 +22,7 @@ from leanevolve.workflow.errors import Exit, WorkflowError
 SETTINGS_FORMAT = "leanevolve-workflows-v1"
 SETTINGS_NAME = "leanevolve.toml"
 LOCAL_SETTINGS_NAME = "leanevolve.local.toml"
-SCHEDULE_STYLES = ("steps", "chunks")
+SCHEDULE_STYLES = ("steps", "chunks", "spotlight")
 WORKFLOW_KINDS = ("campaign", "verification", "intake", "utility")
 
 
@@ -67,6 +68,15 @@ class Limits:
 
     max_api_costs: float
     max_parallel_jobs: int
+
+
+@dataclass(frozen=True)
+class LedgerConfig:
+    """Canonical ledger locations and workflows that must use them."""
+
+    database: Path | None
+    artifacts: Path | None
+    required_workflows: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -148,6 +158,7 @@ class Settings:
     claim: str
     storage: Storage
     limits: Limits
+    ledger: LedgerConfig
     model_route: str | None
     model_auth_env: tuple[str, ...]
     required_tools: tuple[str, ...]
@@ -222,6 +233,12 @@ def _number(value: Any, field_name: str, default: float, minimum: float) -> floa
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise WorkflowError(
             f"{field_name} must be a number",
+            exit_code=Exit.VALIDATION,
+            remediation=f"correct {field_name} in {SETTINGS_NAME}",
+        )
+    if not math.isfinite(float(value)):
+        raise WorkflowError(
+            f"{field_name} must be finite",
             exit_code=Exit.VALIDATION,
             remediation=f"correct {field_name} in {SETTINGS_NAME}",
         )
@@ -419,6 +436,22 @@ def load_settings(root: Path | None = None) -> Settings:
         for name, entry in sorted(workflows_raw.items())
     }
     model_route = merged("model", "route")
+    ledger_database = merged("ledger", "database")
+    ledger_artifacts = merged("ledger", "artifacts")
+    ledger_required = _string_list(
+        _table(raw.get("ledger", {}), "ledger").get("required_workflows"),
+        "ledger.required_workflows",
+    )
+    if (ledger_database is None) != (ledger_artifacts is None):
+        raise WorkflowError(
+            "ledger.database and ledger.artifacts must be configured together",
+            exit_code=Exit.VALIDATION,
+            remediation=(
+                f"set both values in {LOCAL_SETTINGS_NAME} with "
+                "`leanevolve configure --ledger-database ... "
+                "--ledger-artifacts ...`"
+            ),
+        )
     return Settings(
         root=base,
         claim=_string(
@@ -446,6 +479,19 @@ def load_settings(root: Path | None = None) -> Settings:
                     1.0,
                 )
             ),
+        ),
+        ledger=LedgerConfig(
+            database=(
+                None
+                if ledger_database is None
+                else _resolve(base, _string(ledger_database, "ledger.database"))
+            ),
+            artifacts=(
+                None
+                if ledger_artifacts is None
+                else _resolve(base, _string(ledger_artifacts, "ledger.artifacts"))
+            ),
+            required_workflows=ledger_required,
         ),
         model_route=None
         if model_route is None
