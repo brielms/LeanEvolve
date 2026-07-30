@@ -4,9 +4,6 @@
 [![proofs-kernel_checked-16a34a](https://img.shields.io/badge/proofs-kernel__checked-16a34a)](docs/architecture.html)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-**A search loop where the thing doing the searching is never allowed to say whether it
-succeeded.**
-
 LeanEvolve connects [ShinkaEvolve](https://github.com/SakanaAI/ShinkaEvolve) to Lean 4. A
 language model proposes definitions, lemmas, tactics, and whole proof programs. Every one
 of those proposals is untrusted text. Fitness comes from one source only: declarations that
