@@ -77,13 +77,15 @@ RENDERED: dict[str, str] = {
     "workflows.html": "docs/workflows.md",
 }
 
-# Copied verbatim apart from link rewriting.
-COPIED: tuple[str, ...] = ("architecture.html",)
+# Copied verbatim apart from link rewriting. `architecture.html` is also the
+# source of the stylesheet every rendered page shares, so it must stay first.
+COPIED: tuple[str, ...] = ("architecture.html", "ledger.html")
 
 NAV: tuple[tuple[str, str], ...] = (
     ("index.html", "Overview"),
     ("workflows.html", "Workflows"),
     ("architecture.html", "Architecture"),
+    ("ledger.html", "Ledger"),
 )
 
 
@@ -155,9 +157,9 @@ def rewrite_link(href: str, commit: str) -> str:
     for page, source in RENDERED.items():
         if target in (source, Path(source).name):
             return f"{page}{anchor}"
-    for page in COPIED:
-        if target in (page, f"docs/{page}"):
-            return f"{page}{anchor}"
+    for copied in COPIED:
+        if target in (copied, f"docs/{copied}"):
+            return f"{copied}{anchor}"
 
     return f"{blob_url(target, commit)}{anchor}"
 
@@ -178,9 +180,12 @@ def rewrite_html_links(markup: str, commit: str) -> str:
 # --------------------------------------------------------------------------
 #
 # A deliberately small renderer for the constructs the repository's own
-# Markdown actually uses: headings, fenced code, bullet lists, blockquotes,
-# paragraphs, and the inline set below. It is not a general CommonMark
-# implementation, and `--check` will not catch prose that uses something else.
+# Markdown actually uses: headings, fenced code, bullet and ordered lists,
+# pipe tables, blockquotes, paragraphs, and the inline set below. It is not a
+# general CommonMark implementation, and `--check` will not catch prose that
+# uses something else. Anything unsupported degrades into a paragraph, which is
+# why the supported set has to cover what the documentation actually writes:
+# a numbered list rendered as one run-on paragraph is a silent defect.
 
 CODE_SPAN = re.compile(r"`([^`]+)`")
 AUTOLINK = re.compile(r"<((?:https?|mailto):[^>\s]+)>")
@@ -188,7 +193,14 @@ BADGE = re.compile(r"\[!\[([^\]]*)\]\(([^)]+)\)\]\(([^)]+)\)")
 IMAGE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
 LINK = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 BOLD = re.compile(r"\*\*([^*]+)\*\*")
+# Applied only after BOLD has consumed every doubled marker, so a single
+# asterisk left in the text is unambiguously emphasis.
+EMPHASIS = re.compile(r"\*([^*\n]+)\*")
 HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
+ORDERED = re.compile(r"^(\d+)\.\s+(.*)$")
+# A table row is a line whose first non-escaped character is a pipe. The
+# delimiter row is what distinguishes a real table from prose containing pipes.
+TABLE_DELIMITER = re.compile(r"^\|(?:\s*:?-{2,}:?\s*\|)+$")
 
 
 def render_inline(text: str, commit: str) -> str:
@@ -231,6 +243,7 @@ def render_inline(text: str, commit: str) -> str:
     text = IMAGE.sub(on_image, text)
     text = LINK.sub(on_link, text)
     text = BOLD.sub(r"<strong>\1</strong>", text)
+    text = EMPHASIS.sub(r"<em>\1</em>", text)
 
     # Restore protected markup, including any nested inside a link label.
     for _ in range(3):
@@ -240,6 +253,47 @@ def render_inline(text: str, commit: str) -> str:
             r"\x00(\d+)\x00", lambda m: placeholders[int(m.group(1))], text
         )
     return text
+
+
+def split_row(line: str) -> list[str]:
+    """Split a pipe-table row into trimmed cells, dropping the outer pipes."""
+    stripped = line.strip()
+    stripped = stripped.removeprefix("|").removesuffix("|")
+    return [cell.strip() for cell in stripped.split("|")]
+
+
+def _alignments(delimiter: str) -> list[str]:
+    """Read per-column alignment from a table's delimiter row."""
+    alignments: list[str] = []
+    for cell in split_row(delimiter):
+        left, right = cell.startswith(":"), cell.endswith(":")
+        if left and right:
+            alignments.append("center")
+        elif right:
+            alignments.append("right")
+        else:
+            alignments.append("")
+    return alignments
+
+
+def render_table(rows: list[str], delimiter: str, commit: str) -> str:
+    """Render a pipe table. The first row is the header."""
+    alignments = _alignments(delimiter)
+
+    def cells(row: str, tag: str) -> str:
+        rendered = []
+        for index, cell in enumerate(split_row(row)):
+            align = alignments[index] if index < len(alignments) else ""
+            style = f' style="text-align:{align}"' if align else ""
+            rendered.append(
+                f"<{tag}{style}>{render_inline(cell, commit)}</{tag}>"
+            )
+        return "".join(rendered)
+
+    head = f"<thead><tr>{cells(rows[0], 'th')}</tr></thead>"
+    body = "".join(f"<tr>{cells(row, 'td')}</tr>" for row in rows[1:])
+    # Wide tables must scroll inside their own box rather than the page body.
+    return f'<div class="scroll"><table>{head}<tbody>{body}</tbody></table></div>'
 
 
 def render_markdown(text: str, commit: str) -> str:
@@ -255,11 +309,11 @@ def render_markdown(text: str, commit: str) -> str:
         if mode == "p" and paragraph:
             out.append(f"<p>{render_inline(' '.join(paragraph), commit)}</p>")
             paragraph.clear()
-        elif mode == "ul" and items:
+        elif mode in ("ul", "ol") and items:
             rendered = "".join(
                 f"<li>{render_inline(item, commit)}</li>" for item in items
             )
-            out.append(f"<ul>{rendered}</ul>")
+            out.append(f"<{mode}>{rendered}</{mode}>")
             items.clear()
         elif mode == "quote" and quote:
             body = render_inline(" ".join(quote), commit)
@@ -311,6 +365,23 @@ def render_markdown(text: str, commit: str) -> str:
             index += 1
             continue
 
+        # A table needs the delimiter row to confirm it, so look ahead one line
+        # before committing; prose that merely contains a pipe stays prose.
+        if (
+            line.lstrip().startswith("|")
+            and index + 1 < len(lines)
+            and TABLE_DELIMITER.match(lines[index + 1].strip())
+        ):
+            close()
+            delimiter = lines[index + 1].strip()
+            rows = [line]
+            index += 2
+            while index < len(lines) and lines[index].lstrip().startswith("|"):
+                rows.append(lines[index])
+                index += 1
+            out.append(render_table(rows, delimiter, commit))
+            continue
+
         if line.startswith("- "):
             if mode != "ul":
                 close()
@@ -319,8 +390,17 @@ def render_markdown(text: str, commit: str) -> str:
             index += 1
             continue
 
+        ordered = ORDERED.match(line)
+        if ordered:
+            if mode != "ol":
+                close()
+                mode = "ol"
+            items.append(ordered.group(2).strip())
+            index += 1
+            continue
+
         # An indented continuation belongs to the open list item or paragraph.
-        if mode == "ul" and line.startswith("  ") and items:
+        if mode in ("ul", "ol") and line.startswith("  ") and items:
             items[-1] += " " + line.strip()
             index += 1
             continue
@@ -391,7 +471,7 @@ NAV_STYLE = """
   blockquote p { margin: .5rem 0; color: var(--muted); }
 
   img { max-width: 100%; }
-  ul { padding-left: 1.2rem; }
+  ul, ol { padding-left: 1.2rem; }
   li { margin: .3rem 0; }
 </style>
 """

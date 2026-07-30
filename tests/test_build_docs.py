@@ -57,6 +57,8 @@ def test_pages_url_has_a_project_config_override(
         ("workflows.md", "workflows.html"),
         ("docs/architecture.html", "architecture.html"),
         ("../architecture.html", "architecture.html"),
+        ("docs/ledger.html", "ledger.html"),
+        ("ledger.html", "ledger.html"),
         ("../README.md#validate", "index.html#validate"),
     ],
 )
@@ -125,6 +127,70 @@ def test_headings_lists_and_quotes_render() -> None:
     assert "<blockquote><p>a claim</p></blockquote>" in rendered
 
 
+def test_bold_and_emphasis_render_without_leaking_markers() -> None:
+    rendered = build_docs.render_markdown(
+        "It is **evident**, not *proof*.\n", COMMIT
+    )
+    assert "<strong>evident</strong>" in rendered
+    assert "<em>proof</em>" in rendered
+    assert "*" not in rendered
+
+
+def test_emphasis_inside_a_word_renders() -> None:
+    # `tamper-*evident*` is the shape the documentation actually writes.
+    rendered = build_docs.render_markdown("tamper-*evident* only\n", COMMIT)
+    assert "tamper-<em>evident</em> only" in rendered
+
+
+def test_asterisks_in_code_spans_are_not_emphasis() -> None:
+    # A glob in a filename must survive verbatim.
+    rendered = build_docs.render_markdown(
+        "See `candidate_audit_*.lean` here.\n", COMMIT
+    )
+    assert "candidate_audit_*.lean" in rendered
+    assert "<em>" not in rendered
+
+
+def test_ordered_lists_render_as_ordered_lists() -> None:
+    # A numbered list that degrades to a paragraph publishes a run-on sentence
+    # where the source stated a sequence, so the numbering must survive.
+    rendered = build_docs.render_markdown("1. first\n2. second\n", COMMIT)
+    assert "<ol><li>first</li><li>second</li></ol>" in rendered
+    assert "<p>1. first" not in rendered
+
+
+def test_ordered_list_items_take_indented_continuations() -> None:
+    rendered = build_docs.render_markdown("1. first\n   continued\n", COMMIT)
+    assert "<li>first continued</li>" in rendered
+
+
+def test_tables_render_with_a_header_and_scroll_container() -> None:
+    rendered = build_docs.render_markdown(
+        "| Code | Meaning |\n|---|---|\n| `0` | success |\n", COMMIT
+    )
+    assert '<div class="scroll"><table>' in rendered
+    assert "<thead><tr><th>Code</th><th>Meaning</th></tr></thead>" in rendered
+    assert "<tbody><tr><td><code>0</code></td><td>success</td></tr></tbody>" in rendered
+
+
+def test_table_delimiter_sets_column_alignment() -> None:
+    rendered = build_docs.render_markdown(
+        "| L | C | R |\n|:---|:---:|---:|\n| a | b | c |\n", COMMIT
+    )
+    assert '<th style="text-align:center">C</th>' in rendered
+    assert '<th style="text-align:right">R</th>' in rendered
+    # An unmarked column inherits the stylesheet default rather than an inline style.
+    assert "<th>L</th>" in rendered
+
+
+def test_prose_containing_a_pipe_is_not_a_table() -> None:
+    # Without a delimiter row there is no table, and a shell pipeline in prose
+    # must not be swallowed into one.
+    rendered = build_docs.render_markdown("Run `a | b` to filter.\n", COMMIT)
+    assert "<table>" not in rendered
+    assert "<p>" in rendered
+
+
 def test_angle_bracket_autolinks_become_links() -> None:
     rendered = build_docs.render_markdown(
         "Documentation: <https://example.invalid/LeanEvolve/>", COMMIT
@@ -151,6 +217,43 @@ def test_badge_links_survive_rewriting() -> None:
 
 
 # ---------------------------------------------------------------------------
+# One design system
+# ---------------------------------------------------------------------------
+
+
+def test_hand_written_pages_share_one_stylesheet() -> None:
+    """Every hand-written page must carry the same design system.
+
+    `shared_style()` reuses `architecture.html`'s stylesheet for the rendered
+    Markdown pages, but a copied page keeps its own so that it still styles
+    correctly when read as a file in a clone. That duplication is only safe if
+    it cannot drift, so pin it here rather than trusting review to catch it.
+    """
+    blocks = {}
+    for name in build_docs.COPIED:
+        markup = (build_docs.DOCS / name).read_text(encoding="utf-8")
+        match = build_docs.STYLE_PATTERN.search(markup)
+        assert match is not None, f"docs/{name} has no <style> block"
+        blocks[name] = match.group(0)
+
+    reference = build_docs.shared_style()
+    for name, block in blocks.items():
+        assert block == reference, (
+            f"docs/{name} has drifted from the shared stylesheet; "
+            "copy architecture.html's <style> block verbatim"
+        )
+
+
+def test_every_copied_page_is_reachable_from_the_navigation() -> None:
+    # A page that builds but is not linked is a page nobody finds.
+    navigated = {page for page, _ in build_docs.NAV}
+    for name in build_docs.COPIED:
+        assert name in navigated, f"{name} is built but missing from NAV"
+    for page in build_docs.RENDERED:
+        assert page in navigated, f"{page} is built but missing from NAV"
+
+
+# ---------------------------------------------------------------------------
 # The gate CI runs before deployment
 # ---------------------------------------------------------------------------
 
@@ -168,7 +271,12 @@ def site(tmp_path: Path) -> Path:
 def test_repository_site_builds_and_every_link_resolves(site: Path) -> None:
     built = build_docs.build(site)
     assert "index.html" in built.pages, "no index.html means the site root 404s"
-    assert sorted(built.pages) == ["architecture.html", "index.html", "workflows.html"]
+    assert sorted(built.pages) == [
+        "architecture.html",
+        "index.html",
+        "ledger.html",
+        "workflows.html",
+    ]
     assert (site / ".nojekyll").is_file()
     assert build_docs.check(built) == []
 

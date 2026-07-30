@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="The LeanEvolve research ledger: append-only events, derived state, the verification ladder, actor authority, and disposable projections">
+  <title>LeanEvolve · Research ledger</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --ink: #16201c;
+      --muted: #5a6b64;
+      --bg: #fbfcfb;
+      --panel: #ffffff;
+      --line: #d9e2dd;
+      --accent: #0f766e;
+      --accent-soft: #e3f2ef;
+      --warn: #9a6207;
+      --warn-soft: #fbf1de;
+      --code-bg: #f2f5f3;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #e7eeea;
+        --muted: #9aaaa3;
+        --bg: #0d1211;
+        --panel: #141b19;
+        --line: #26332e;
+        --accent: #5eead4;
+        --accent-soft: #12302b;
+        --warn: #f0b866;
+        --warn-soft: #2c2415;
+        --code-bg: #101715;
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      max-width: 62rem;
+      margin: 0 auto;
+      padding: 2.5rem 1.25rem 5rem;
+      color: var(--ink);
+      background: var(--bg);
+      font-family: var(--sans);
+      line-height: 1.65;
+    }
+
+    h1 { margin: 0 0 .25rem; font-size: 1.9rem; letter-spacing: -.02em; }
+    h2 {
+      margin: 3rem 0 .75rem;
+      padding-bottom: .4rem;
+      border-bottom: 1px solid var(--line);
+      font-size: 1.3rem;
+      letter-spacing: -.01em;
+    }
+    h3 { margin: 1.75rem 0 .5rem; font-size: 1rem; }
+
+    a { color: var(--accent); }
+    p, li { color: var(--ink); }
+    .sub { margin: 0 0 2rem; color: var(--muted); }
+    .note { color: var(--muted); font-size: .9rem; }
+
+    code { padding: .1em .35em; border-radius: 4px; background: var(--code-bg); font-family: var(--mono); font-size: .875em; }
+    pre {
+      padding: 1rem;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--code-bg);
+    }
+    pre code { padding: 0; background: none; font-size: .82rem; line-height: 1.55; }
+
+    /* Wide content scrolls inside its own box; the page body never does. */
+    .scroll { overflow-x: auto; }
+    .scroll table { margin: 0; }
+
+    table { width: 100%; margin: 1rem 0; border-collapse: collapse; font-size: .9rem; }
+    th, td { padding: .55rem .7rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: var(--muted); font-size: .78rem; letter-spacing: .04em; text-transform: uppercase; }
+    td code { white-space: nowrap; }
+    .num { color: var(--muted); font-family: var(--mono); font-size: .82rem; text-align: right; }
+
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .panel { padding: 1.1rem 1.25rem; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+    .panel h3 { margin-top: 0; }
+    .panel ul { margin: 0; padding-left: 1.1rem; }
+    .panel li { margin: .3rem 0; font-size: .92rem; }
+    .panel.trusted { border-left: 3px solid var(--accent); }
+    .panel.untrusted { border-left: 3px solid var(--warn); }
+
+    /* The one-sentence claim a section is really making. */
+    .lede {
+      margin: 1.25rem 0;
+      padding: 1rem 1.25rem;
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--accent);
+      border-radius: 10px;
+      background: var(--accent-soft);
+    }
+    .lede p { margin: 0; }
+    .lede p + p { margin-top: .6rem; }
+
+    .caution {
+      margin: 1.25rem 0;
+      padding: 1rem 1.25rem;
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--warn);
+      border-radius: 10px;
+      background: var(--warn-soft);
+    }
+    .caution p { margin: 0; }
+
+    .tag {
+      display: inline-block;
+      padding: .1rem .45rem;
+      border-radius: 4px;
+      background: var(--code-bg);
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: .72rem;
+      text-transform: uppercase;
+    }
+
+    ol.flow { margin: 1rem 0; padding-left: 1.3rem; }
+    ol.flow li { margin: .6rem 0; }
+
+    ul, ol { padding-left: 1.2rem; }
+    li { margin: .3rem 0; }
+
+    /* Diagrams are inline SVG so the page stays a single self-contained file
+       and inherits the reader's colour scheme through the same variables. */
+    figure { margin: 1.5rem 0; }
+    figure svg { display: block; width: 100%; height: auto; }
+    figcaption { margin-top: .6rem; color: var(--muted); font-size: .85rem; }
+    .diagram text { font-family: var(--sans); fill: var(--ink); }
+    .diagram .box { fill: var(--panel); stroke: var(--line); }
+    .diagram .box-accent { fill: var(--accent-soft); stroke: var(--accent); }
+    .diagram .box-warn { fill: var(--warn-soft); stroke: var(--warn); }
+    .diagram .lbl { font-size: 12.5px; }
+    .diagram .lbl-strong { font-size: 12.5px; font-weight: 600; }
+    .diagram .lbl-small { font-size: 10.5px; fill: var(--muted); }
+    .diagram .mono { font-family: var(--mono); font-size: 11px; }
+    .diagram .edge { stroke: var(--muted); fill: none; stroke-width: 1.4; }
+    .diagram .edge-reject { stroke: var(--warn); fill: none; stroke-width: 1.4; stroke-dasharray: 4 3; }
+    .diagram .rule { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 3; }
+
+    footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
+
+    @media (max-width: 700px) {
+      .cols { grid-template-columns: 1fr; }
+      body { padding-top: 1.5rem; }
+    }
+  </style>
+</head>
+<body>
+
+<h1>The research ledger</h1>
+<p class="sub">
+  An optional, domain-neutral record of what a long research programme has actually
+  established &mdash; built so that no component can overstate it. See the
+  <a href="architecture.html">architecture page</a> for the kernel trust boundary this
+  layer records, and the <a href="../README.md">README</a> for setup.
+</p>
+
+<div class="lede">
+  <p>
+    The hard problem in a months-long formal search is not storing results. It is
+    preventing four different kinds of "nearly proved" from being filed as
+    <em>proved</em> &mdash; and keeping a crashed run, an exhausted budget, and a
+    superseded claim from all collapsing into the same word.
+  </p>
+  <p>
+    The ledger's answer is structural rather than procedural: <strong>there is no status
+    column anywhere in the schema.</strong> Nothing can write a status, so nothing can
+    lie about one.
+  </p>
+</div>
+
+<h2>Why it is a ledger and not a database</h2>
+<p>
+  One canonical graph holds typed objects, typed connections, and an append-only event
+  stream. Everything a human wants to look at &mdash; a goal board, a chronology, a
+  certified proof graph, a prior-art crosswalk, a recovery queue, a status report &mdash;
+  is a <em>projection</em> computed from that state. Projections are disposable by design:
+  deleting every one of them loses no authoritative information.
+</p>
+<p>
+  This is the opposite of the usual arrangement, where a status report becomes a second
+  source of truth that quietly disagrees with the first. Here there is only one place a
+  fact can live, and one way it can get there.
+</p>
+
+<figure>
+  <svg class="diagram" viewBox="0 0 780 300" role="img"
+       aria-label="An actor's write passes an authority check, commits in a single write session as objects, connections and a hash-chained event, and derived state and projections are computed from those events rather than stored.">
+    <defs>
+      <marker id="l-arrow" viewBox="0 0 10 10" refX="9" refY="5"
+              markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--muted)"></path>
+      </marker>
+      <marker id="l-arrow-warn" viewBox="0 0 10 10" refX="9" refY="5"
+              markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--warn)"></path>
+      </marker>
+    </defs>
+
+    <text class="lbl-small" x="1" y="12">WRITE PATH</text>
+
+    <rect class="box" x="1" y="22" width="120" height="52" rx="8"></rect>
+    <text class="lbl-strong" x="61" y="43" text-anchor="middle">Actor</text>
+    <text class="lbl-small" x="61" y="60" text-anchor="middle">one of eight roles</text>
+
+    <rect class="box box-accent" x="152" y="22" width="128" height="52" rx="8"></rect>
+    <text class="lbl-strong" x="216" y="43" text-anchor="middle">authorize()</text>
+    <text class="lbl-small" x="216" y="60" text-anchor="middle">may this actor?</text>
+
+    <rect class="box" x="312" y="22" width="150" height="52" rx="8"></rect>
+    <text class="lbl-strong" x="387" y="43" text-anchor="middle">write session</text>
+    <text class="lbl-small" x="387" y="60" text-anchor="middle">one SQLite txn</text>
+
+    <path class="edge" marker-end="url(#l-arrow)" d="M 121 48 L 150 48"></path>
+    <path class="edge" marker-end="url(#l-arrow)" d="M 280 48 L 310 48"></path>
+
+    <path class="edge-reject" marker-end="url(#l-arrow-warn)" d="M 216 74 L 216 104"></path>
+    <rect class="box box-warn" x="140" y="110" width="152" height="34" rx="7"></rect>
+    <text class="lbl-small" x="216" y="132" text-anchor="middle">rejected: exceeds authority</text>
+
+    <rect class="box" x="492" y="14" width="286" height="30" rx="7"></rect>
+    <text class="lbl" x="635" y="34" text-anchor="middle">objects &amp; typed connections</text>
+    <rect class="box box-accent" x="492" y="52" width="286" height="34" rx="7"></rect>
+    <text class="lbl" x="635" y="68" text-anchor="middle">events &#8212; hash-chained, append-only</text>
+    <text class="lbl-small" x="635" y="81" text-anchor="middle">each commits to its predecessor</text>
+
+    <path class="edge" marker-end="url(#l-arrow)" d="M 462 40 L 490 30"></path>
+    <path class="edge" marker-end="url(#l-arrow)" d="M 462 56 L 490 66"></path>
+
+    <line class="rule" x1="1" y1="164" x2="779" y2="164"></line>
+    <text class="lbl-small" x="1" y="182">READ PATH &#8212; computed, never stored</text>
+
+    <rect class="box" x="1" y="192" width="356" height="100" rx="9"></rect>
+    <text class="lbl-strong" x="18" y="214">state_of()</text>
+    <text class="lbl-small" x="98" y="214">six independent dimensions</text>
+    <text class="mono" x="18" y="238">truth</text>
+    <text class="mono" x="18" y="256">verification</text>
+    <text class="mono" x="18" y="274">encoding</text>
+    <text class="mono" x="192" y="238">lifecycle</text>
+    <text class="mono" x="192" y="256">operational</text>
+    <text class="mono" x="192" y="274">source_evidence</text>
+
+    <rect class="box" x="392" y="192" width="386" height="100" rx="9"></rect>
+    <text class="lbl-strong" x="410" y="214">projections</text>
+    <text class="lbl-small" x="492" y="214">nine views, all disposable</text>
+    <text class="lbl-small" x="410" y="238">goal board &#183; chronology &#183; proof graph</text>
+    <text class="lbl-small" x="410" y="256">turn delta &#183; recovery queue &#183; crosswalk</text>
+    <text class="lbl-small" x="410" y="274">each stamped with the chain head that produced it</text>
+
+    <path class="edge" marker-end="url(#l-arrow)" d="M 635 86 L 635 130 L 180 130 L 180 190"></path>
+    <path class="edge" marker-end="url(#l-arrow)" d="M 635 130 L 635 190"></path>
+  </svg>
+  <figcaption>
+    Writes are gated by authority and commit as one transaction with their explanation.
+    Everything on the read path is recomputed from events, which is why no writer can set a
+    status.
+  </figcaption>
+</figure>
+
+<h2>Truth has three values and one way in</h2>
+<div class="scroll">
+<table>
+  <thead><tr><th>Value</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>open</code></td><td>No trusted proof or refutation is present. The default, and the honest answer for everything unresolved &mdash; including a timeout and an exhausted budget.</td></tr>
+    <tr><td><code>proved</code></td><td>An exact proposition has a currently valid <code>kernel_certified</code> event whose receipt binds source, dependencies, toolchain, evaluator, catalog, checkpoint, and axiom policy.</td></tr>
+    <tr><td><code>refuted</code></td><td>A trusted formal negation, or a trusted refutation bridge, applies.</td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  <code>kernel_certified</code> is the <em>only</em> truth-bearing action in a vocabulary of
+  52 event actions, and only the <code>authoritative_evaluator</code> may emit it. A
+  research agent, the scratch gateway, the computation checker, and a human researcher all
+  cannot &mdash; enforced by <code>authorize()</code> and tested in
+  <code>tests/test_ledger_vocabulary.py</code>.
+</p>
+
+<h3>A refutation needs a bridge</h3>
+<p>
+  A witness alone never refutes anything. A <code>refutes</code> edge must originate at a
+  <code>formal_claim</code> carrying <code>trust_level: "kernel"</code>; the witness then
+  attaches to that bridge with <code>supports</code>. This is deliberate. "This
+  counterexample disproves the conjecture" is really two premises &mdash; the witness, and a
+  proved theorem saying such a witness suffices &mdash; and one binary edge cannot honestly
+  carry both. Retracting the bridge's certification returns the target to
+  <code>open</code>.
+</p>
+
+<h2>The verification ladder</h2>
+<p>
+  Verification is a ladder. A rung is <em>earned</em>, never assigned, and a lower rung is
+  never silently upgraded. The rank column is what
+  <code>dominant_verification_level</code> compares, so a weaker later event cannot demote a
+  stronger earlier one.
+</p>
+<div class="scroll">
+<table>
+  <thead><tr><th class="num">Rank</th><th>Level</th><th>Earned by</th><th>Does <em>not</em> mean</th></tr></thead>
+  <tbody>
+    <tr>
+      <td class="num">0</td>
+      <td><code>untested</code>, <code>elaboration_failed</code></td>
+      <td>Nothing yet, or a failed elaboration.</td>
+      <td>That the claim is false.</td>
+    </tr>
+    <tr>
+      <td class="num">1</td>
+      <td><code>scratch_checked</code></td>
+      <td>An in-memory Lean stream elaborated through the scratch gateway, binding exact source, checkpoint key, environment identity, declaration, and normalized proposition hash.</td>
+      <td>That the declaration is in any candidate, frontier, or maintained file.</td>
+    </tr>
+    <tr>
+      <td class="num">2</td>
+      <td><code>axiom_policy_audited</code></td>
+      <td><code>#print axioms</code> output whose dependencies are within the standard-axiom policy.</td>
+      <td>That anything else about the proof was independently re-checked.</td>
+    </tr>
+    <tr>
+      <td class="num">3</td>
+      <td><code>authoritatively_evaluated</code></td>
+      <td>A separate evaluation applied its own source policy, staged the candidate, and produced receipts that load and verify.</td>
+      <td>That the result is promoted or reachable from the maintained frontier.</td>
+    </tr>
+    <tr>
+      <td class="num">4</td>
+      <td><code>promotion_audited</code></td>
+      <td>A clean standalone audit accepted a prospective promotion, binding manifest and catalog hashes and the composed declarations.</td>
+      <td>That the promotion has been recorded as active &mdash; that is a separate <code>promotion_recorded</code> event.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+<p class="note">
+  Concrete proof projects bind these rungs to their own scratch checker, axiom-policy
+  auditor, authoritative evaluator, and promotion gate. The core deliberately names no
+  project layout and no theorem namespace.
+</p>
+
+<h2>What must never imply what</h2>
+<p>
+  Each dimension is independent, and the vocabulary keeps their value sets disjoint so an
+  overloaded status cannot creep back in. These are the confusions the design exists to
+  prevent:
+</p>
+<ul>
+  <li>A <strong>timeout</strong> is <code>operational: timed_out</code>. It is unresolved
+      &mdash; never <code>refuted</code>, never <code>failed</code>.</li>
+  <li>An <strong>operational run failure</strong> does not invalidate a check that already
+      completed. The check, not the turn, is the transaction boundary.</li>
+  <li><strong>Computational evidence</strong> &mdash; even an exhaustive, independently
+      checked certificate &mdash; <em>supports</em> a claim. It is not a kernel theorem.</li>
+  <li><strong><code>fully_encoded</code> is not <code>proved</code>.</strong> Encoding state
+      describes how completely a claim is written down in a formal system, and says nothing
+      about whether it holds.</li>
+  <li><strong><code>superseded</code> is not <code>refuted</code>.</strong> Being replaced is
+      a lifecycle fact; replaying history to an earlier event must still show the old claim
+      active.</li>
+  <li><strong>A citation or a retained PDF</strong> does not make a formal claim trusted.
+      <code>source_evidence</code> is its own dimension for exactly this reason.</li>
+</ul>
+
+<h2>Authority</h2>
+<p>
+  Eight actor roles, each with an explicit ceiling. Authority is checked on every event
+  before it commits, and <code>leanevolve-ledger verify</code> re-checks the whole history
+  for events that exceeded their actor's authority.
+</p>
+<div class="scroll">
+<table>
+  <thead><tr><th>Actor</th><th>May</th><th>May not</th></tr></thead>
+  <tbody>
+    <tr><td><code>research_agent</code></td><td>Propose claims and relationships, annotate, abandon its own routes, request checks.</td><td>Certify, promote, declare a computation proved, revise an exact proposition.</td></tr>
+    <tr><td><code>lean_scratch_gateway</code></td><td>Store exact source, record elaboration and scratch outcomes, create formal claims for checked declarations.</td><td>Certify, promote.</td></tr>
+    <tr><td><code>authoritative_evaluator</code></td><td>Emit evaluation, certification, materialization, and promotion.</td><td>&mdash;</td></tr>
+    <tr><td><code>axiom_auditor</code></td><td>Emit axiom-policy outcomes.</td><td>Certify.</td></tr>
+    <tr><td><code>computation_checker</code></td><td>Record computations and verified certificates.</td><td>Certify.</td></tr>
+    <tr><td><code>human_researcher</code></td><td>Create, annotate, correct metadata, choose spotlights, authorize campaigns.</td><td>Certify. Assertion is not proof.</td></tr>
+    <tr><td><code>importer</code></td><td>Replay history, declaring its source and its ordering fidelity.</td><td>Invent guarantees the old records never carried.</td></tr>
+    <tr><td><code>ledger_service</code></td><td>Reconcile, manage retention and artifact locations, record lifecycle.</td><td>Certify.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Identity and correction</h2>
+<p>
+  A formal claim's identity is its <em>normalized proposition</em>, not its name.
+</p>
+<ul>
+  <li>Changing the proposition creates a <strong>new object</strong> plus an explicit
+      <code>supersedes</code>, <code>specializes</code>, <code>strengthens</code>, or
+      <code>weakens</code> edge.</li>
+  <li>Renaming a declaration without changing the proposition adds an alias
+      (<code>alias_added</code>), not a new claim.</li>
+  <li>A proposition written as <code>def ... : Prop</code> is a formal claim with no
+      proof.</li>
+  <li>A goal does not become a second object once it is proved. <code>kind</code> says what
+      a thing <em>is</em>; being a goal, a spotlight target, or a frontier member is a
+      property and a projection concern.</li>
+</ul>
+<p>
+  History is append-only, so a correction adds a new fact naming the event it corrects
+  (<code>correction_recorded</code>) and never rewrites the old one. A retracted connection
+  leaves the current projection and stays in the audit history. An imported event must state
+  whether its original time and ordering are <code>exact</code>, <code>inferred</code>, or
+  <code>unknown</code> &mdash; an importer may not launder an unknown ordering into a
+  confident one.
+</p>
+
+<h2>Surviving a crash</h2>
+<p>
+  A long campaign gets interrupted: a killed turn, a lost machine, an exhausted budget.
+  Verification work that already succeeded must not evaporate because the process around it
+  died. The queue is built from ordinary check objects and lifecycle events rather than an
+  external broker, so a worker crash cannot strand state somewhere the ledger cannot see.
+</p>
+
+<figure>
+  <svg class="diagram" viewBox="0 0 780 208" role="img"
+       aria-label="Source bytes reach the content-addressed store before the check is recorded as submitted; a warm Lean worker elaborates it; result bytes commit before any answer is shown to an agent.">
+    <defs>
+      <marker id="q-arrow" viewBox="0 0 10 10" refX="9" refY="5"
+              markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--muted)"></path>
+      </marker>
+    </defs>
+
+    <rect class="box" x="1" y="40" width="132" height="56" rx="8"></rect>
+    <text class="lbl-strong" x="67" y="63" text-anchor="middle">source bytes</text>
+    <text class="lbl-small" x="67" y="80" text-anchor="middle">hashed, then stored</text>
+
+    <rect class="box box-accent" x="163" y="40" width="140" height="56" rx="8"></rect>
+    <text class="lbl-strong" x="233" y="63" text-anchor="middle">check_submitted</text>
+    <text class="lbl-small" x="233" y="80" text-anchor="middle">commits after bytes land</text>
+
+    <rect class="box" x="333" y="40" width="140" height="56" rx="8"></rect>
+    <text class="lbl-strong" x="403" y="63" text-anchor="middle">warm worker</text>
+    <text class="lbl-small" x="403" y="80" text-anchor="middle">lean --server, keyed</text>
+
+    <rect class="box box-accent" x="503" y="40" width="140" height="56" rx="8"></rect>
+    <text class="lbl-strong" x="573" y="63" text-anchor="middle">result bytes</text>
+    <text class="lbl-small" x="573" y="80" text-anchor="middle">commit before reply</text>
+
+    <rect class="box" x="673" y="40" width="105" height="56" rx="8"></rect>
+    <text class="lbl-strong" x="725" y="63" text-anchor="middle">agent</text>
+    <text class="lbl-small" x="725" y="80" text-anchor="middle">sees answer</text>
+
+    <path class="edge" marker-end="url(#q-arrow)" d="M 133 68 L 161 68"></path>
+    <path class="edge" marker-end="url(#q-arrow)" d="M 303 68 L 331 68"></path>
+    <path class="edge" marker-end="url(#q-arrow)" d="M 473 68 L 501 68"></path>
+    <path class="edge" marker-end="url(#q-arrow)" d="M 643 68 L 671 68"></path>
+
+    <path class="edge" marker-end="url(#q-arrow)" d="M 403 96 L 403 128 L 233 128 L 233 98"></path>
+    <text class="lbl-small" x="318" y="146" text-anchor="middle">crash: the job is still in the ledger, reconciled without a model transcript</text>
+    <text class="lbl-small" x="390" y="176" text-anchor="middle">Identical requests deduplicate on a content digest, so a repeated submission is not repeated work.</text>
+  </svg>
+  <figcaption>
+    Bytes commit before the fact that refers to them, at both ends. Nothing is ever
+    reported to an agent that is not already durable.
+  </figcaption>
+</figure>
+
+<p>
+  The workers keep Lean itself alive rather than wrapping repeated
+  <code>lean --stdin</code> calls: one <code>lean --server</code> process owns a
+  checkpoint and environment key and elaborates sequential virtual documents. The durable
+  queue stays the source of job truth, which is what lets the service reconcile a crash
+  without consulting a model transcript.
+</p>
+<div class="caution">
+  <p>
+    Scratch success surviving a killed turn is the whole point of the durable lifecycle. It
+    is <em>not</em> a shortcut around any later rung of the ladder.
+  </p>
+</div>
+
+<h2>Artifacts: the hash is the identity</h2>
+<p>
+  Large bytes do not belong in SQLite. They are written to a local store named by digest,
+  verified, and only then referenced from the graph; replication to slower or removable
+  storage happens afterwards and never changes identity. The invariant that makes this safe
+  is that bytes are hashed <em>before</em> they are trusted, and re-hashed whenever a
+  location is verified.
+</p>
+<div class="lede">
+  <p>
+    A path is a hint about where some bytes were last seen. It is never a claim about what
+    they are.
+  </p>
+</div>
+<p>
+  Every add, verify, move, archive, and loss is an event, so an artifact that went missing
+  from a removable volume is a recorded fact rather than a silent absence.
+  <code>under_replicated</code> reports what is not yet safely copied, and
+  <code>reverify</code> re-hashes what is claimed to be present.
+</p>
+
+<h2>Integrity and export</h2>
+<p>
+  <code>verify</code> checks schema and vocabulary binding, foreign keys, the event hash
+  chain, artifact digests, actor authority, and the invariants that keep derived truth
+  honest. Every finding names its subject, so a report can be acted on rather than merely
+  read.
+</p>
+<div class="caution">
+  <p>
+    A clean run means the database is internally consistent and that no recorded event
+    exceeded its actor's authority. It does <em>not</em> mean the mathematics is right; that
+    is what the Lean audit is for.
+  </p>
+</div>
+<p>
+  The chain is tamper-<em>evident</em>, not self-authenticating: anyone who can rewrite the
+  database can also recompute the chain. Detection comes from anchoring a head elsewhere,
+  which is what <code>head_signed</code> events and the exported head record exist to
+  support.
+</p>
+<p>
+  Export is deterministic: two databases holding the same history export to the same bytes,
+  because ordering comes from canonical JSON with sorted keys and a fixed row order rather
+  than from insertion order or wall-clock time. That makes an export diffable, archivable,
+  and usable as a rollback bundle. Restore is a faithful reconstruction rather than a
+  re-derivation &mdash; rows are written as recorded, keeping event IDs and digests, and the
+  chain is then verified. That is what lets a restored ledger prove it is the same ledger.
+</p>
+<p class="note">
+  Ordering is the increasing event ID. <code>occurred_at</code> is wall-clock information and
+  is never used to decide precedence.
+</p>
+
+<h2>The nine projections</h2>
+<p>
+  Each carries the exact chain head that produced it. Callers may cache or render these
+  dictionaries freely; deleting them loses no authoritative state.
+</p>
+<div class="scroll">
+<table>
+  <thead><tr><th>Projection</th><th>Answers</th></tr></thead>
+  <tbody>
+    <tr><td><code>goal_board</code></td><td>What is being worked on, and where each goal stands across the independent dimensions.</td></tr>
+    <tr><td><code>active_goal_statuses</code></td><td>The current derived state of each active goal, without the board's presentation.</td></tr>
+    <tr><td><code>chronology</code></td><td>What happened, in committed event order.</td></tr>
+    <tr><td><code>formal_proof_graph</code></td><td>Which certified claims depend on which, from certification events rather than prose.</td></tr>
+    <tr><td><code>turn_delta</code></td><td>What one turn actually changed &mdash; the honest answer to "did that turn accomplish anything".</td></tr>
+    <tr><td><code>recovery_queue</code></td><td>Interrupted and unpromoted work, so a crash produces a work list rather than a mystery.</td></tr>
+    <tr><td><code>prior_art_crosswalk</code></td><td>How intake-recorded literature claims map onto formal claims in the graph.</td></tr>
+    <tr><td><code>research_findings</code></td><td>What has been established, at what rung, with which receipts.</td></tr>
+    <tr><td><code>unified_status</code></td><td>One report combining the above for a human or an agent starting a session.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Using it</h2>
+<p>
+  The ledger is off until both paths are configured together &mdash; a database and a
+  writable content-addressed artifact store:
+</p>
+<pre><code>mise run configure -- \
+  --ledger-database /path/to/research.sqlite3 \
+  --ledger-artifacts /path/to/ledger-artifacts</code></pre>
+<p>
+  Then inspect or validate it. <code>--database</code> is global and precedes the
+  subcommand; every subcommand accepts <code>--json</code>:
+</p>
+<pre><code>mise run ledger -- --database research.sqlite3 verify --artifacts ledger-artifacts --deep
+mise run ledger -- --database research.sqlite3 head
+mise run ledger -- --database research.sqlite3 status
+mise run ledger -- --database research.sqlite3 recover
+mise run ledger -- --database research.sqlite3 events
+mise run ledger -- --database research.sqlite3 show --id &lt;object-id&gt;
+mise run ledger -- --database research.sqlite3 export --output export.json
+mise run ledger -- --database research.sqlite3 project --output projections/</code></pre>
+<div class="scroll">
+<table>
+  <thead><tr><th>Command</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>verify</code></td><td>Validate the whole database. <code>--deep</code> re-hashes local artifact bytes.</td></tr>
+    <tr><td><code>head</code></td><td>Show the chain head &mdash; the value to anchor externally.</td></tr>
+    <tr><td><code>show</code></td><td>Show one object together with its derived state.</td></tr>
+    <tr><td><code>events</code></td><td>List events in committed order.</td></tr>
+    <tr><td><code>export</code></td><td>Write a deterministic export.</td></tr>
+    <tr><td><code>project</code></td><td>Rebuild every disposable projection into a directory.</td></tr>
+    <tr><td><code>status</code></td><td>Canonical current research status.</td></tr>
+    <tr><td><code>recover</code></td><td>Canonical interrupted or unpromoted work.</td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  Canonical mutations belong to the tools that produce them, not to ad-hoc SQL, which is why
+  this CLI is almost entirely read-only. A project that has completed cutover lists the
+  workflows that must fail closed under <code>ledger.required_workflows</code> in
+  <code>leanevolve.toml</code>; those workflows then refuse to start unless both the
+  database and a writable artifact store are available.
+</p>
+
+<h2>How the meaning is pinned down</h2>
+<p>
+  Prose can drift from behaviour, so the semantics are executable. <code>fixtures.py</code>
+  holds golden scenarios, each the hardest version of one real case: work preserved across a
+  killed turn, a refutation that needs two premises, a candidate that both failed and
+  succeeded, a claim replaced without being disproved, and a computation that is valuable
+  without being a theorem. Each scenario declares its expectations and is replayed by the
+  test suite.
+</p>
+<p>
+  The controlled vocabulary itself is frozen and hashed. Unknown terms are rejected by
+  default: a write naming a kind, relation, action, actor, or state outside the model fails
+  rather than silently extending the model. The current vocabulary is
+  <code>leanevolve-ledger-vocabulary-v1</code>, version 1, and covers 13 object kinds, 19
+  relations, 52 event actions, 8 actors, and 6 independent state dimensions. Its hash is
+  recorded in the database, so a ledger written under a different vocabulary is detected
+  rather than misread.
+</p>
+
+<h2 id="limits">Limitations</h2>
+<ul>
+  <li><strong>The chain proves consistency, not honesty.</strong> Whoever can rewrite the
+      database can recompute the chain. The guarantee only becomes meaningful once a head is
+      anchored somewhere the writer does not control.</li>
+  <li><strong>Authority is enforced within the ledger.</strong> It constrains what a
+      component may <em>record</em>. It cannot stop someone with direct database access from
+      writing rows and re-deriving hashes.</li>
+  <li><strong>The rungs are only as strong as their adapters.</strong> The core does not
+      implement a scratch checker or an evaluator; it records what one reports. A project
+      that binds <code>authoritative_evaluator</code> to something weak gets a weak
+      guarantee with a strong name.</li>
+  <li><strong>Single writer.</strong> SQLite is configured for one writer with concurrent
+      readers, so throughput is bounded by that, by design.</li>
+  <li><strong>Restore keeps recorded identity.</strong> That is the point, but it also means
+      restore does not re-verify the mathematics &mdash; only that the history is the same
+      history.</li>
+</ul>
+
+<footer>
+  LeanEvolve &middot; kernel-scored proof discovery &middot;
+  <a href="../README.md">README</a> &middot;
+  <a href="architecture.html">Architecture</a> &middot;
+  <a href="../SECURITY.md">SECURITY.md</a> &middot;
+  <a href="../CONTRIBUTING.md">CONTRIBUTING.md</a>
+</footer>
+
+</body>
+</html>

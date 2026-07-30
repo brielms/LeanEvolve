@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="LeanEvolve architecture: trust boundary, module map, data flow, and run artifacts">
+  <meta name="description" content="LeanEvolve architecture: the trust boundary, the three layers, the acceptance rule, data flow, and run artifacts">
   <title>LeanEvolve · Architecture</title>
   <style>
     :root {
@@ -14,9 +14,12 @@
       --panel: #ffffff;
       --line: #d9e2dd;
       --accent: #0f766e;
+      --accent-soft: #e3f2ef;
       --warn: #9a6207;
+      --warn-soft: #fbf1de;
       --code-bg: #f2f5f3;
       --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
 
     @media (prefers-color-scheme: dark) {
@@ -27,7 +30,9 @@
         --panel: #141b19;
         --line: #26332e;
         --accent: #5eead4;
+        --accent-soft: #12302b;
         --warn: #f0b866;
+        --warn-soft: #2c2415;
         --code-bg: #101715;
       }
     }
@@ -40,7 +45,7 @@
       padding: 2.5rem 1.25rem 5rem;
       color: var(--ink);
       background: var(--bg);
-      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: var(--sans);
       line-height: 1.65;
     }
 
@@ -69,6 +74,10 @@
     }
     pre code { padding: 0; background: none; font-size: .82rem; line-height: 1.55; }
 
+    /* Wide content scrolls inside its own box; the page body never does. */
+    .scroll { overflow-x: auto; }
+    .scroll table { margin: 0; }
+
     table { width: 100%; margin: 1rem 0; border-collapse: collapse; font-size: .9rem; }
     th, td { padding: .55rem .7rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
     th { color: var(--muted); font-size: .78rem; letter-spacing: .04em; text-transform: uppercase; }
@@ -82,6 +91,28 @@
     .panel li { margin: .3rem 0; font-size: .92rem; }
     .panel.trusted { border-left: 3px solid var(--accent); }
     .panel.untrusted { border-left: 3px solid var(--warn); }
+
+    /* The one-sentence claim a section is really making. */
+    .lede {
+      margin: 1.25rem 0;
+      padding: 1rem 1.25rem;
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--accent);
+      border-radius: 10px;
+      background: var(--accent-soft);
+    }
+    .lede p { margin: 0; }
+    .lede p + p { margin-top: .6rem; }
+
+    .caution {
+      margin: 1.25rem 0;
+      padding: 1rem 1.25rem;
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--warn);
+      border-radius: 10px;
+      background: var(--warn-soft);
+    }
+    .caution p { margin: 0; }
 
     .tag {
       display: inline-block;
@@ -97,6 +128,26 @@
     ol.flow { margin: 1rem 0; padding-left: 1.3rem; }
     ol.flow li { margin: .6rem 0; }
 
+    ul, ol { padding-left: 1.2rem; }
+    li { margin: .3rem 0; }
+
+    /* Diagrams are inline SVG so the page stays a single self-contained file
+       and inherits the reader's colour scheme through the same variables. */
+    figure { margin: 1.5rem 0; }
+    figure svg { display: block; width: 100%; height: auto; }
+    figcaption { margin-top: .6rem; color: var(--muted); font-size: .85rem; }
+    .diagram text { font-family: var(--sans); fill: var(--ink); }
+    .diagram .box { fill: var(--panel); stroke: var(--line); }
+    .diagram .box-accent { fill: var(--accent-soft); stroke: var(--accent); }
+    .diagram .box-warn { fill: var(--warn-soft); stroke: var(--warn); }
+    .diagram .lbl { font-size: 12.5px; }
+    .diagram .lbl-strong { font-size: 12.5px; font-weight: 600; }
+    .diagram .lbl-small { font-size: 10.5px; fill: var(--muted); }
+    .diagram .mono { font-family: var(--mono); font-size: 11px; }
+    .diagram .edge { stroke: var(--muted); fill: none; stroke-width: 1.4; }
+    .diagram .edge-reject { stroke: var(--warn); fill: none; stroke-width: 1.4; stroke-dasharray: 4 3; }
+    .diagram .rule { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 3; }
+
     footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
 
     @media (max-width: 700px) {
@@ -109,18 +160,27 @@
 
 <h1>LeanEvolve architecture</h1>
 <p class="sub">
-  How a model proposal becomes a scored, replayable formal result &mdash; and what each
-  component is and is not trusted to do. See the
-  <a href="../README.md">README</a> for installation and usage.
+  How an untrusted proposal becomes a scored, replayable formal result &mdash; and what
+  each component is and is not trusted to do. See the
+  <a href="../README.md">README</a> for installation and usage, and the
+  <a href="ledger.html">ledger page</a> for the research-record layer.
 </p>
+
+<div class="lede">
+  <p>
+    Everything that <em>finds</em> a proof is untrusted. Everything that <em>accepts</em>
+    one is small, pinned, and offline-recheckable. The architecture exists to keep those
+    two sets from touching.
+  </p>
+</div>
 
 <h2>The asymmetry</h2>
 <p>
-  ShinkaEvolve and the language model propose complete Lean files. Those files are
-  untrusted input. Fitness is assigned only by running Lean over the candidate and
-  reading back, per configured declaration, the set of axioms that declaration depends
-  on. An untrusted component can steer the search anywhere; it cannot award itself a
-  point of credit.
+  A language model, driven by ShinkaEvolve, proposes complete Lean files. Those files are
+  input, not evidence. Fitness is assigned only by running Lean over the candidate and
+  reading back &mdash; per configured declaration &mdash; the set of axioms that
+  declaration actually depends on. An untrusted component can steer the search anywhere it
+  likes; it cannot award itself a single point of credit.
 </p>
 
 <div class="cols">
@@ -130,6 +190,7 @@
       <li>ShinkaEvolve parent selection and archive</li>
       <li>Language-model proposals and prompts</li>
       <li>Python orchestration, ranking, scheduling</li>
+      <li>The research ledger and its projections</li>
       <li>Human steering and interpretation</li>
     </ul>
   </div>
@@ -145,69 +206,327 @@
   </div>
 </div>
 
+<p class="note">
+  The trusted set is deliberately tiny: the kernel driver and receipt parser together are
+  about 170 lines of Python, and everything they conclude is re-derivable offline from the
+  files a run leaves behind.
+</p>
+
+<h2>The gate</h2>
+
+<figure>
+  <svg class="diagram" viewBox="0 0 780 232" role="img"
+       aria-label="A candidate passes through the source policy, a whole-file elaboration, and a per-goal axiom audit before contributing weight to a score. Failure at any stage yields no credit.">
+    <defs>
+      <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+              markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--muted)"></path>
+      </marker>
+      <marker id="arrow-warn" viewBox="0 0 10 10" refX="9" refY="5"
+              markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--warn)"></path>
+      </marker>
+    </defs>
+
+    <rect class="box box-warn" x="1" y="30" width="120" height="52" rx="8"></rect>
+    <text class="lbl-strong" x="61" y="51" text-anchor="middle">Candidate</text>
+    <text class="lbl-small" x="61" y="68" text-anchor="middle">untrusted bytes</text>
+
+    <line class="rule" x1="140" y1="8" x2="140" y2="224"></line>
+    <text class="lbl-small" x="148" y="20">trust boundary</text>
+
+    <rect class="box" x="162" y="30" width="128" height="52" rx="8"></rect>
+    <text class="lbl-strong" x="226" y="51" text-anchor="middle">Source policy</text>
+    <text class="lbl-small" x="226" y="68" text-anchor="middle">markers, size, scan</text>
+
+    <rect class="box" x="316" y="30" width="140" height="52" rx="8"></rect>
+    <text class="lbl-strong" x="386" y="51" text-anchor="middle">Whole-file check</text>
+    <text class="lbl-small" x="386" y="68" text-anchor="middle">lake env lean</text>
+
+    <rect class="box" x="482" y="30" width="146" height="52" rx="8"></rect>
+    <text class="lbl-strong" x="555" y="51" text-anchor="middle">Per-goal audit</text>
+    <text class="lbl-small" x="555" y="68" text-anchor="middle">#print axioms</text>
+
+    <rect class="box box-accent" x="654" y="30" width="124" height="52" rx="8"></rect>
+    <text class="lbl-strong" x="716" y="51" text-anchor="middle">Score</text>
+    <text class="lbl-small" x="716" y="68" text-anchor="middle">sum of weights</text>
+
+    <path class="edge" marker-end="url(#arrow)" d="M 121 56 L 160 56"></path>
+    <path class="edge" marker-end="url(#arrow)" d="M 290 56 L 314 56"></path>
+    <path class="edge" marker-end="url(#arrow)" d="M 456 56 L 480 56"></path>
+    <path class="edge" marker-end="url(#arrow)" d="M 628 56 L 652 56"></path>
+
+    <path class="edge-reject" marker-end="url(#arrow-warn)" d="M 226 82 L 226 138"></path>
+    <path class="edge-reject" marker-end="url(#arrow-warn)" d="M 386 82 L 386 138"></path>
+    <path class="edge-reject" marker-end="url(#arrow-warn)" d="M 555 82 L 555 138"></path>
+
+    <rect class="box box-warn" x="150" y="146" width="478" height="46" rx="8"></rect>
+    <text class="lbl-strong" x="389" y="167" text-anchor="middle">No credit</text>
+    <text class="lbl-small" x="389" y="183" text-anchor="middle">recorded, explained in feedback.txt, never scored</text>
+
+    <text class="lbl-small" x="226" y="215" text-anchor="middle">rejected outright</text>
+    <text class="lbl-small" x="386" y="215" text-anchor="middle">whole file must elaborate</text>
+    <text class="lbl-small" x="555" y="215" text-anchor="middle">per goal, independently</text>
+  </svg>
+  <figcaption>
+    The three stages a candidate passes, and the single exit taken at any failure. Only the
+    rightmost box produces fitness, and only Lean can open it.
+  </figcaption>
+</figure>
+
 <h2>The acceptance rule</h2>
 <p>
-  Implemented in <code>kernel.py</code>. A candidate is first checked as a whole; if that
-  run exits nonzero, nothing is credited. Otherwise each configured goal is audited in a
-  separate Lean run, and goals are considered in configuration order:
+  Implemented in <code>kernel.py</code>. Every Lean invocation for one candidate shares a
+  single timeout budget of <code>kernel.timeout_seconds</code>; once it is exhausted, the
+  remaining invocations report a timeout rather than silently getting more time.
 </p>
 <ol class="flow">
-  <li>Lean must elaborate
-      <code>example : &lt;target_type&gt; := &lt;declaration&gt;</code> in the audit module,
-      binding the configured proposition to the candidate declaration;</li>
-  <li>a receipt must exist for the goal's <code>declaration</code> &mdash; that same audit
-      run exited zero and printed a <code>#print axioms</code> line for the exact name;</li>
-  <li>the reported axioms must be a subset of <code>kernel.allowed_axioms</code>;</li>
-  <li>every name in the goal's <code>depends_on</code> must already have been accepted.</li>
+  <li><strong>Source policy.</strong> <code>validate_candidate</code> enforces the byte
+      limit, exactly one ordered pair of evolution markers, and the banned-construct scan.
+      A violation ends the evaluation with score zero.</li>
+  <li><strong>Whole-file check.</strong> The candidate is written to
+      <code>candidate_check.lean</code> and elaborated. If that exits nonzero, nothing is
+      credited and no goal is even audited.</li>
+  <li><strong>Per-goal audit.</strong> For each configured goal, the candidate is copied
+      and two lines are appended:
+      <code>example : &lt;target_type&gt; := &lt;declaration&gt;</code> followed by
+      <code>#print axioms &lt;declaration&gt;</code>. That file is elaborated on its own. A
+      receipt is collected only when the run exits zero <em>and</em> prints an axiom line
+      naming that exact declaration.</li>
+  <li><strong>Acceptance.</strong> Goals are then settled in configuration order. A goal is
+      accepted when it has a receipt, its reported axioms are a subset of
+      <code>kernel.allowed_axioms</code>, and every name in its <code>depends_on</code> has
+      already been accepted.</li>
 </ol>
 <p>
-  The score is the sum of <code>weight</code> over accepted goals. Receipts are recorded
-  in <code>goal_axioms</code> even for goals that then fail step 2 or 3, so a rejection
-  remains diagnosable.
+  The score is the sum of <code>weight</code> over accepted goals. Because the target
+  wrapper and the axiom command are elaborated together, a declaration published under the
+  expected name but proving a <em>different</em> proposition earns nothing.
 </p>
 <p class="note">
-  The target wrapper and axiom command are elaborated together. A declaration under the
-  expected name but with a different proposition therefore receives no credit.
+  Diagnosability has a precise limit worth knowing: <code>goal_axioms</code> records a
+  receipt for any goal whose audit run succeeded, including goals then rejected for
+  axiom-policy or dependency reasons. A goal whose audit run itself failed leaves no
+  receipt at all, and its evidence is the <code>lean.log</code> section for that goal.
 </p>
 
-<h2>Module map</h2>
+<h3>What the source policy rejects</h3>
+<p>
+  Scanning happens after comments and string contents are scrubbed, so a banned word inside
+  a comment is not a violation. The scan is case-insensitive and covers:
+</p>
+<div class="scroll">
 <table>
-  <thead><tr><th>Module</th><th>Responsibility</th><th class="num">Lines</th></tr></thead>
+  <thead><tr><th>Category</th><th>Matched</th><th>Why</th></tr></thead>
   <tbody>
-    <tr><td><code>config.py</code></td><td>Parse and validate the portable JSON configuration into a <code>SearchConfig</code>; resolve paths, reject escapes, forward dependencies, and duplicate goals.</td><td class="num">253</td></tr>
-    <tr><td><code>policy.py</code></td><td>Textual source policy: evolution-marker structure, size limit, and a scan for banned constructs over comment- and string-scrubbed source.</td><td class="num">98</td></tr>
-    <tr><td><code>kernel.py</code></td><td>Invoke <code>lake env lean</code> under a reduced environment and a shared timeout budget; kernel-check target-typed wrappers, parse per-declaration axiom receipts, and apply the acceptance rule.</td><td class="num">174</td></tr>
-    <tr><td><code>evaluate.py</code></td><td>The Shinka-compatible evaluator CLI. Scores one candidate and writes the results directory, including the evaluation manifest.</td><td class="num">180</td></tr>
-    <tr><td><code>audit.py</code></td><td>Hashing, input snapshotting, the run manifest, the hash-linked event log, and inventory verification.</td><td class="num">254</td></tr>
-    <tr><td><code>lineage.py</code></td><td>Snapshot Shinka's SQLite database and export a hash-bound parent graph with the strongest recorded frontier path.</td><td class="num">189</td></tr>
-    <tr><td><code>run.py</code></td><td>Campaign launcher: build the project, configure ShinkaEvolve, create the run manifest, run, then finalize.</td><td class="num">245</td></tr>
-    <tr><td><code>replay.py</code></td><td>Verify a finished run and re-evaluate every recorded candidate against a rebuilt input snapshot.</td><td class="num">107</td></tr>
-    <tr><td><code>shinka_runtime.py</code></td><td>Compatibility shims for the pinned ShinkaEvolve revision: Lean language registration and an atomic <code>best/</code> refresh.</td><td class="num">84</td></tr>
-    <tr><td><code>codex_bridge.py</code></td><td>Translate Headless's <code>xhigh</code> effort value to Codex <code>max</code>. Used only by the optional bundled model bridge.</td><td class="num">86</td></tr>
+    <tr><td>placeholder</td><td><code>sorry</code></td><td>Admits any goal.</td></tr>
+    <tr><td>placeholder</td><td><code>admit</code></td><td>Admits any goal.</td></tr>
+    <tr><td>assumption declaration</td><td><code>axiom</code>, <code>constant</code></td><td>A candidate must not extend the axiom base it is judged against.</td></tr>
+    <tr><td>compile-time command</td><td><code>#eval</code>, <code>#reduce</code>, <code>#guard</code></td><td>Can print text that counterfeits a receipt line.</td></tr>
+    <tr><td>custom elaborator</td><td><code>elab</code>, <code>macro</code>, <code>syntax</code></td><td>Can redefine what later source means.</td></tr>
+    <tr><td>foreign implementation</td><td><code>extern</code>, <code>foreign</code>, <code>implemented_by</code></td><td>Moves the real definition outside Lean.</td></tr>
+    <tr><td>initialization</td><td><code>initialize</code></td><td>Runs code at import time.</td></tr>
+    <tr><td>run-time tactic</td><td><code>run_tac</code></td><td>Executes arbitrary metaprogram code.</td></tr>
+    <tr><td>unsafe declaration</td><td><code>unsafe</code>, <code>partial</code></td><td>Escapes the termination and soundness discipline.</td></tr>
   </tbody>
 </table>
+</div>
+<p class="note">
+  This textual gate is defence in depth, not the decision. It is a word-level
+  approximation of what Lean source can express; the axiom receipt is the check that
+  actually decides.
+</p>
+
+<h2>Three layers</h2>
+<p>
+  The repository is one package with three concentric responsibilities. Only the middle one
+  is inside the mathematical trust boundary.
+</p>
+
+<figure>
+  <svg class="diagram" viewBox="0 0 780 244" role="img"
+       aria-label="The workflow layer wraps the evaluator core, which alone touches Lean; the ledger layer records history alongside, and neither the workflow nor the ledger can grant credit.">
+    <defs>
+      <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5"
+              markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--muted)"></path>
+      </marker>
+    </defs>
+
+    <rect class="box" x="1" y="1" width="530" height="242" rx="10"></rect>
+    <text class="lbl-strong" x="18" y="26">workflow/</text>
+    <text class="lbl-small" x="100" y="26">tasks, gates, plans, receipts &#8212; untrusted</text>
+
+    <rect class="box box-accent" x="24" y="44" width="484" height="104" rx="9"></rect>
+    <text class="lbl-strong" x="42" y="68">evaluator core</text>
+    <text class="lbl-small" x="152" y="68">config, policy, kernel, evaluate, audit, lineage, replay</text>
+
+    <rect class="box" x="44" y="82" width="128" height="48" rx="7"></rect>
+    <text class="lbl" x="108" y="103" text-anchor="middle">kernel.py</text>
+    <text class="lbl-small" x="108" y="119" text-anchor="middle">the only Lean caller</text>
+
+    <rect class="box" x="192" y="82" width="128" height="48" rx="7"></rect>
+    <text class="lbl" x="256" y="103" text-anchor="middle">audit.py</text>
+    <text class="lbl-small" x="256" y="119" text-anchor="middle">hashes, event chain</text>
+
+    <rect class="box" x="340" y="82" width="148" height="48" rx="7"></rect>
+    <text class="lbl" x="414" y="103" text-anchor="middle">replay.py</text>
+    <text class="lbl-small" x="414" y="119" text-anchor="middle">offline recheck</text>
+
+    <rect class="box" x="24" y="164" width="230" height="60" rx="9"></rect>
+    <text class="lbl-strong" x="139" y="188" text-anchor="middle">Lake project</text>
+    <text class="lbl-small" x="139" y="205" text-anchor="middle">statements + pinned toolchain</text>
+
+    <rect class="box" x="278" y="164" width="230" height="60" rx="9"></rect>
+    <text class="lbl-strong" x="393" y="188" text-anchor="middle">campaign directory</text>
+    <text class="lbl-small" x="393" y="205" text-anchor="middle">manifest, events, candidates</text>
+
+    <rect class="box" x="562" y="1" width="216" height="242" rx="10"></rect>
+    <text class="lbl-strong" x="580" y="26">ledger/</text>
+    <text class="lbl-small" x="628" y="26">optional record</text>
+    <text class="lbl-small" x="580" y="52">append-only events</text>
+    <text class="lbl-small" x="580" y="72">typed research graph</text>
+    <text class="lbl-small" x="580" y="92">content-addressed bytes</text>
+    <text class="lbl-small" x="580" y="112">durable check queue</text>
+    <text class="lbl-small" x="580" y="132">warm Lean workers</text>
+    <text class="lbl-small" x="580" y="152">disposable projections</text>
+    <rect class="box box-warn" x="580" y="170" width="180" height="42" rx="7"></rect>
+    <text class="lbl-small" x="670" y="188" text-anchor="middle">cannot grant credit;</text>
+    <text class="lbl-small" x="670" y="202" text-anchor="middle">records what the kernel said</text>
+
+    <path class="edge" marker-end="url(#arrow2)" d="M 108 130 L 108 162"></path>
+    <path class="edge" marker-end="url(#arrow2)" d="M 300 130 L 360 162"></path>
+    <path class="edge" marker-end="url(#arrow2)" d="M 508 96 L 560 96"></path>
+  </svg>
+  <figcaption>
+    <code>workflow/</code> decides what to spend and what to report; the core decides what
+    Lean is asked; <code>ledger/</code> remembers. Credit flows outward from the core only.
+  </figcaption>
+</figure>
+
+<h3>Evaluator core &mdash; <code>src/leanevolve/</code></h3>
+<div class="scroll">
+<table>
+  <thead><tr><th>Module</th><th>Responsibility</th></tr></thead>
+  <tbody>
+    <tr><td><code>config.py</code></td><td>Parse and validate the portable JSON configuration into a <code>SearchConfig</code>: resolve paths, reject escapes outside the config directory, and reject duplicate goals or forward dependencies.</td></tr>
+    <tr><td><code>policy.py</code></td><td>Textual source policy: marker structure, size limit, and the banned-construct scan over comment- and string-scrubbed source.</td></tr>
+    <tr><td><code>kernel.py</code></td><td>Invoke <code>lake env lean</code> under a reduced environment and one shared timeout budget; elaborate target-typed wrappers, parse per-declaration axiom receipts, apply the acceptance rule.</td></tr>
+    <tr><td><code>evaluate.py</code></td><td>The Shinka-compatible evaluator CLI. Scores one candidate and writes the results directory, including the evaluation manifest.</td></tr>
+    <tr><td><code>audit.py</code></td><td>Hashing, input snapshotting, the run manifest, the hash-linked event log, and inventory verification.</td></tr>
+    <tr><td><code>lineage.py</code></td><td>Snapshot Shinka's SQLite database and export a hash-bound parent graph with the strongest recorded frontier path.</td></tr>
+    <tr><td><code>run.py</code></td><td>Campaign launcher: build the project, configure ShinkaEvolve, create the run manifest, run, then finalize.</td></tr>
+    <tr><td><code>replay.py</code></td><td>Verify a finished run and re-evaluate every recorded candidate against a rebuilt input snapshot.</td></tr>
+    <tr><td><code>shinka_runtime.py</code></td><td>Compatibility shims for the pinned ShinkaEvolve revision: Lean language registration and an atomic <code>best/</code> refresh.</td></tr>
+    <tr><td><code>codex_bridge.py</code></td><td>Translate the headless <code>xhigh</code> effort value to Codex <code>max</code>. Used only by the optional bundled model route.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>Task interface &mdash; <code>src/leanevolve/workflow/</code></h3>
+<p>
+  This layer owns the experience and none of the mathematics. It is what <code>mise</code>
+  calls.
+</p>
+<div class="scroll">
+<table>
+  <thead><tr><th>Module</th><th>Responsibility</th></tr></thead>
+  <tbody>
+    <tr><td><code>cli.py</code></td><td>The single command family behind every task. Each subcommand emits the same versioned receipt and exits with a stable code class.</td></tr>
+    <tr><td><code>doctor.py</code></td><td><code>doctor</code> ("can this machine run the supported workflows") and <code>status</code> ("what does this repository currently claim, derived from receipts rather than prose").</td></tr>
+    <tr><td><code>environment.py</code></td><td>Resolve every tool to an absolute path and version rather than trusting a name on <code>PATH</code>, and record the resolved set in provenance.</td></tr>
+    <tr><td><code>settings.py</code></td><td>Version-controlled scientific defaults in <code>leanevolve.toml</code>, machine-local overrides in the ignored <code>leanevolve.local.toml</code>.</td></tr>
+    <tr><td><code>gates.py</code></td><td><code>check</code>, <code>audit</code>, and <code>demo</code>, kept honestly distinct: the fast signal never claims to be the forensic one.</td></tr>
+    <tr><td><code>launch.py</code></td><td><code>plan</code> and <code>run</code>: schedule, cost ceiling, storage reserve, and inherited frontier are all validated before anything is spent.</td></tr>
+    <tr><td><code>schedule.py</code></td><td>Parse and record the ordered epoch schedule before a model turn is spent, so a receipt and a replay compare against the same trajectory.</td></tr>
+    <tr><td><code>spotlight.py</code></td><td>Freeze one objective for a short sprint without narrowing what may be proved or what counts as evidence.</td></tr>
+    <tr><td><code>campaign.py</code></td><td>Discover and summarize campaigns from their own manifests, event streams, and lineage; disagreement reports as unverified.</td></tr>
+    <tr><td><code>receipt.py</code></td><td>The completion receipt every task writes to disk before exiting, including on interruption.</td></tr>
+    <tr><td><code>errors.py</code></td><td>Stable exit-code classes, and the rule that every failure carries one concrete recovery command.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>Research record &mdash; <code>src/leanevolve/ledger/</code></h3>
+<p>
+  Optional, domain-neutral, and much the largest of the three. Because it decides nothing
+  mathematical, it gets its own page: see <a href="ledger.html">the ledger</a> for the
+  verification ladder, the authority model, three-valued truth, and the projections.
+</p>
 
 <h2>Data flow</h2>
-<h3><code>leanevolve-run</code></h3>
+
+<h3>A campaign</h3>
 <ol class="flow">
-  <li><code>load_config</code> validates the JSON and anchors every path at the config file.</li>
-  <li><code>lake build</code> runs once in the Lake project, so elaboration failures are the candidate's, not the environment's.</li>
-  <li><code>create_run_manifest</code> copies the formal inputs into <code>input_snapshot/</code> and the LeanEvolve sources into <code>tool_snapshot/</code>, verifying each copy's hash, then opens the event log.</li>
-  <li><code>ShinkaEvolveRunner</code> proposes candidates. For each one it spawns <code>evaluate.py</code> as a subprocess, passing <code>--config</code> and <code>--expected-project-sha256</code>.</li>
-  <li>On exit &mdash; including failure or interrupt &mdash; <code>write_lineage</code> then <code>finalize_run_manifest</code> record the lineage, final status, and result inventory.</li>
+  <li><code>load_config</code> validates the JSON and anchors every path at the
+      configuration file.</li>
+  <li><code>lake build</code> runs once in the Lake project, so an elaboration failure
+      later is the candidate's fault and not the environment's.</li>
+  <li><code>create_run_manifest</code> copies the formal inputs into
+      <code>input_snapshot/</code> and the LeanEvolve sources into
+      <code>tool_snapshot/</code>, verifying each copy's hash, then opens the event log.</li>
+  <li><code>ShinkaEvolveRunner</code> proposes candidates. For each one it spawns
+      <code>evaluate.py</code> as a subprocess with <code>--config</code> and
+      <code>--expected-project-sha256</code>.</li>
+  <li>On exit &mdash; success, failure, or interrupt &mdash; <code>write_lineage</code> and
+      then <code>finalize_run_manifest</code> record the lineage, final status, and result
+      inventory.</li>
 </ol>
 
-<h3><code>leanevolve-evaluate</code> (one candidate)</h3>
+<h3>One evaluation</h3>
 <ol class="flow">
-  <li>Re-hash the formal project and compare against <code>--expected-project-sha256</code>, so a statement edited mid-run invalidates the evaluation instead of silently changing the target.</li>
-  <li><code>validate_candidate</code> applies the textual policy.</li>
-  <li>Elaborate the whole candidate. A nonzero exit ends the evaluation with no credit.</li>
-  <li>For each goal, append <code>#print axioms &lt;declaration&gt;</code> to a copy of the candidate and elaborate again, collecting the receipt.</li>
-  <li>Apply the acceptance rule, then write <code>correct.json</code>, <code>metrics.json</code>, <code>feedback.txt</code>, and <code>evaluation_manifest.json</code>.</li>
+  <li>Re-hash the formal project and compare with
+      <code>--expected-project-sha256</code>, so a statement edited mid-run invalidates the
+      evaluation instead of quietly changing the target.</li>
+  <li>Apply the source policy.</li>
+  <li>Elaborate the whole candidate; a nonzero exit ends the evaluation with no credit.</li>
+  <li>Audit each goal in its own Lean run and collect receipts.</li>
+  <li>Apply the acceptance rule, then write <code>correct.json</code>,
+      <code>metrics.json</code>, <code>feedback.txt</code>, and
+      <code>evaluation_manifest.json</code>.</li>
 </ol>
 <p class="note">
   Cost note: this is one Lean invocation for the candidate plus one per goal, and each
-  audit re-elaborates the full candidate.
+  audit re-elaborates the full candidate. Model feedback is the tail of the combined log,
+  truncated to 20,000 characters.
+</p>
+
+<h3>What the model is told</h3>
+<p>
+  Feedback is deliberately blunt about where credit comes from. It opens with the accepted
+  goal names and the axiom policy, then appends the elaborator output:
+</p>
+<p>
+  This is the real output of <code>mise run demo</code> on the bundled example, whose seed
+  proves one configured goal and leaves the other absent:
+</p>
+<pre><code>KERNEL-ACCEPTED GOALS: zero_right. Only listed declarations receive fitness credit.
+AXIOM POLICY: Classical.choice, Quot.sound, propext
+=== candidate ===
+
+=== zero_right ===
+'Evolved.zero_right' depends on axioms: [propext]
+
+=== addition_commutes ===
+candidate_audit_addition_commutes.lean:18:41: error(lean.unknownIdentifier):
+  Unknown identifier `Evolved.addition_commutes`
+candidate_audit_addition_commutes.lean:19:14: error(lean.unknownIdentifier):
+  Unknown constant `Evolved.addition_commutes`</code></pre>
+<p>
+  Note what the second goal produces: a named, located elaboration error rather than a
+  score of zero with no explanation. The model's next turn sees exactly which declaration is
+  missing, and <code>propext</code> &mdash; a real dependency of the accepted proof &mdash;
+  is inside the configured policy, so the first goal earns its weight.
+</p>
+
+<h3>Isolation of a Lean run</h3>
+<p>
+  Each invocation runs with <code>cwd</code> set to the Lake project and an environment
+  reduced to only <code>ELAN_HOME</code>, <code>HOME</code>, <code>LANG</code>,
+  <code>LC_ALL</code>, <code>PATH</code>, <code>TMPDIR</code>, and <code>USER</code>. When
+  <code>kernel.warning_as_error</code> is set, <code>-DwarningAsError=true</code> is added.
+  A configured <code>kernel.sandbox_prefix</code> is prepended to the command line, which
+  is how an external sandbox is attached.
 </p>
 
 <h2>Run artifacts</h2>
@@ -220,6 +539,7 @@ tool_snapshot/leanevolve/    the LeanEvolve sources this run executed
 gen_N/main.lean              the exact candidate submitted to the gate
 gen_N/results/
     evaluation_manifest.json candidate + project hashes, axiom receipts, toolchain
+    correct.json             the single accept/reject bit Shinka reads
     metrics.json             combined_score and the public/private metric split
     feedback.txt             what the model sees on the next turn
     lean.log                 full elaborator output for the candidate and each audit
@@ -227,23 +547,30 @@ gen_N/results/
     candidate_audit_*.lean   the exact file elaborated for each goal audit</code></pre>
 
 <h3>Record shapes</h3>
+<div class="scroll">
 <table>
   <thead><tr><th>File</th><th>Keys</th></tr></thead>
   <tbody>
     <tr><td><code>events.jsonl</code></td><td><code>sequence</code>, <code>timestamp_utc</code>, <code>event</code>, <code>details</code>, <code>previous_line_sha256</code>, <code>record_sha256</code></td></tr>
-    <tr><td><code>evaluation_manifest.json</code></td><td><code>accepted_goals</code>, <code>goal_axioms</code>, <code>allowed_axioms</code>, <code>candidate</code>, <code>formal_inputs</code>, <code>formal_inputs_sha256</code>, <code>lean_toolchain</code>, <code>kernel_command</code>, <code>kernel_returncode</code>, <code>candidate_source_policy</code>, <code>metrics</code></td></tr>
+    <tr><td><code>evaluation_manifest.json</code></td><td><code>accepted_goals</code>, <code>goal_axioms</code>, <code>allowed_axioms</code>, <code>candidate</code>, <code>configuration</code>, <code>formal_inputs</code>, <code>formal_inputs_sha256</code>, <code>lean_toolchain</code>, <code>kernel_command</code>, <code>kernel_returncode</code>, <code>sandbox_prefix</code>, <code>candidate_source_policy</code>, <code>correct</code>, <code>metrics</code></td></tr>
     <tr><td><code>proof_lineage.json</code> node</td><td><code>program_id</code>, <code>parent_id</code>, <code>parent_node_sha256</code>, <code>generation</code>, <code>code_sha256</code>, <code>accepted_goals</code>, <code>newly_accepted_goals</code>, <code>candidate</code>, <code>evaluation_receipt</code>, <code>proposal_artifacts</code>, <code>node_sha256</code></td></tr>
   </tbody>
 </table>
+</div>
+<p class="note">
+  <code>goal_axioms</code> is keyed by goal <em>name</em>; <code>declaration</code> is the
+  fully qualified Lean constant that was audited. Goal names are bookkeeping labels, and
+  <code>depends_on</code> refers to them.
+</p>
 
 <h2>Replay</h2>
 <p>
-  <code>leanevolve-replay --run-dir &lt;dir&gt;</code> re-derives results without contacting a
-  model. It verifies the event chain, the recorded result inventory, and the lineage
-  hashes; confirms the installed LeanEvolve sources match the recorded tool snapshot;
-  then copies <code>input_snapshot/</code> to a temporary directory, rebuilds it with
-  <code>lake build</code>, and re-evaluates every <code>gen_N/main.lean</code>. On success it
-  prints a single line:
+  <code>leanevolve-replay --run-dir &lt;dir&gt;</code> re-derives results without contacting
+  a model. It verifies the event chain, the recorded result inventory, and the lineage
+  hashes; confirms the installed LeanEvolve sources match the recorded tool snapshot; then
+  copies <code>input_snapshot/</code> to a temporary directory, rebuilds it with
+  <code>lake build</code>, and re-evaluates every <code>gen_N/main.lean</code>. On success
+  it prints one line:
 </p>
 <pre><code>Replay accepted: inventory, lineage, and kernel results agree.</code></pre>
 <p>
@@ -251,8 +578,9 @@ gen_N/results/
 </p>
 
 <h3>What replay compares</h3>
+<div class="scroll">
 <table>
-  <thead><tr><th>Checked</th><th>Recorded but not re-checked</th></tr></thead>
+  <thead><tr><th>Re-checked against a fresh kernel run</th><th>Recorded, but not re-checked</th></tr></thead>
   <tbody>
     <tr>
       <td>event-chain hashes, result inventory, lineage and node hashes, tool-snapshot identity, candidate file record, <code>accepted_goals</code></td>
@@ -260,31 +588,46 @@ gen_N/results/
     </tr>
   </tbody>
 </table>
+</div>
+<p class="note">
+  So replay answers "do the same candidates still earn the same goals here", not "was the
+  original machine honest about its toolchain". The second question is what the recorded
+  hashes are for, and it needs an auditor who already trusts the manifest.
+</p>
 
 <h2 id="limits">Current limitations</h2>
+<p>
+  Stated plainly, because a system whose selling point is honest accounting has to be
+  honest about itself.
+</p>
 <ul>
   <li><strong>Replay requires a lineage file.</strong> A run that ended before ShinkaEvolve
       created its database has no <code>proof_lineage.json</code>, and replay reports
       <code>missing proof lineage</code> without checking anything else.</li>
   <li><strong>Replay is version-locked.</strong> It compares the recorded tool snapshot
       against the <em>installed</em> package rather than executing the snapshot, so replay
-      requires the same LeanEvolve version that produced the run.</li>
-  <li><strong>The textual policy is an approximation.</strong> It reduces obvious shortcuts;
-      it is not a complete account of what Lean source can express. The axiom receipt is
-      the decisive check.</li>
+      needs the same LeanEvolve version that produced the run.</li>
+  <li><strong>The textual policy is an approximation.</strong> It reduces obvious
+      shortcuts; it is not a complete account of what Lean source can express. The axiom
+      receipt is the decisive check.</li>
   <li><strong><code>warning_as_error</code> includes linters.</strong> With it enabled, a
       correct proof carrying a style-linter warning is rejected.</li>
   <li><strong>Not a host sandbox.</strong> Lean elaboration can execute code at compile
-      time. Timeouts and a reduced environment are not containment; see
+      time. A timeout and a reduced environment are not containment; run untrusted
+      campaigns in a disposable container or virtual machine, and see
       <a href="../SECURITY.md">SECURITY.md</a>.</li>
   <li><strong>Hashes are tamper-evident, not tamper-proof.</strong> They detect edits
-      relative to a manifest an auditor already trusts; they establish nothing on their
-      own without an external anchor.</li>
+      relative to a manifest an auditor already trusts; on their own, against an adversary
+      who can rewrite the manifest too, they establish nothing.</li>
+  <li><strong>A green build is not a true document.</strong> <code>mise run docs</code>
+      proves every link resolves. No gate checks whether this page's prose still matches
+      the code.</li>
 </ul>
 
 <footer>
   LeanEvolve &middot; kernel-scored proof discovery &middot;
   <a href="../README.md">README</a> &middot;
+  <a href="ledger.html">Ledger</a> &middot;
   <a href="../SECURITY.md">SECURITY.md</a> &middot;
   <a href="../CONTRIBUTING.md">CONTRIBUTING.md</a>
 </footer>

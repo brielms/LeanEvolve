@@ -71,8 +71,20 @@ records incidental accepted goals, and permits only `proved`, `refuted`, or
 ## Documentation site
 
 The configured GitHub Pages site is generated from this repository, never
-hand-maintained: `index.html` is rendered from `README.md`, this page from
-`docs/workflows.md`, and the architecture page is copied from `docs/architecture.html`.
+hand-maintained. Two pages are rendered from Markdown and two are copied from
+hand-written HTML:
+
+| Page | Source |
+|---|---|
+| `index.html` | `README.md` |
+| `workflows.html` | `docs/workflows.md` |
+| `architecture.html` | `docs/architecture.html` |
+| `ledger.html` | `docs/ledger.html` |
+
+The copied pages carry their own stylesheet so they still render correctly when
+read as files in a clone, and `architecture.html`'s `<style>` block is the one
+the rendered pages reuse. A test asserts the copied pages share it verbatim, so
+the design system cannot drift page by page.
 
 ```bash
 mise run docs

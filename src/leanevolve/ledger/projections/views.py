@@ -1,4 +1,4 @@
-"""The seven canonical, disposable ledger projections.
+"""The canonical, disposable ledger projections registered in ``PROJECTIONS``.
 
 Every view carries the exact chain head that produced it.  Callers may cache or
 render these dictionaries, but deleting them loses no authoritative state.

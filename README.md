@@ -4,57 +4,90 @@
 [![proofs-kernel_checked-16a34a](https://img.shields.io/badge/proofs-kernel__checked-16a34a)](docs/architecture.html)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-**Documentation:** [architecture](docs/architecture.html) and
-[supported workflows](docs/workflows.md). The configured Pages site is generated
-from these repository sources and stamped with the commit it was built from.
+**A search loop where the thing doing the searching is never allowed to say whether it
+succeeded.**
 
-LeanEvolve is a small, auditable bridge between
-[ShinkaEvolve](https://github.com/SakanaAI/ShinkaEvolve) and Lean 4. A model may
-suggest definitions, lemmas, tactics, and whole proof programs. Those suggestions
-remain untrusted. Fitness comes only from declarations that Lean accepts under an
-explicit axiom policy.
+LeanEvolve connects [ShinkaEvolve](https://github.com/SakanaAI/ShinkaEvolve) to Lean 4. A
+language model proposes definitions, lemmas, tactics, and whole proof programs. Every one
+of those proposals is untrusted text. Fitness comes from one source only: declarations that
+Lean accepts, whose axiom dependencies fall inside a policy fixed before the run started.
 
-> **ShinkaEvolve generates proof-producing ideas; the Lean kernel judges them.**
+> ShinkaEvolve generates proof-producing ideas; the Lean kernel judges them.
 
-This repository is proof-search infrastructure, not a claim that generated text is
-correct. A result becomes part of the verified frontier only when its declaration
-elaborates, its dependency receipt satisfies the configured policy, and the run can
-be replayed from hash-pinned inputs.
+This is proof-search infrastructure. It is not a claim that generated text is correct, and
+nothing here presents an open proposition as a proved theorem.
 
-The optional canonical research ledger stores typed research objects,
-relationships, append-only events, evaluator receipts, and content-addressed
-artifacts in one auditable system. Goal boards, chronology, proof graphs,
-prior-art crosswalks, recovery queues, and status reports are disposable
-projections rather than competing sources of truth. The core is
-domain-neutral; theorem-specific corpus importers and compatibility adapters
-belong in downstream proof projects.
+**Documentation:** [architecture](docs/architecture.html) ·
+[research ledger](docs/ledger.html) · [workflows](docs/workflows.md). The published site is
+generated from these sources and stamped with the commit it was built from.
+
+## What makes this interesting
+
+Most of the design effort went somewhere unusual: into making it structurally impossible
+for the system to overstate what it has established.
+
+**The scorer cannot be persuaded.** Credit is not a model's self-report, a heuristic, or a
+regex over Lean's output looking for the absence of errors. For each configured goal,
+LeanEvolve asks Lean to elaborate `example : <target_type> := <declaration>` and to print
+that declaration's axiom dependencies. A proof that type-checks but leans on an axiom
+outside the policy scores zero, and so does a declaration published under the expected name
+that proves something else entirely.
+
+**The trusted set is deliberately tiny.** The kernel driver and receipt parser together are
+about 170 lines of Python. Everything else — 12,000 lines of orchestration, task interface,
+and record-keeping — sits outside the mathematical trust boundary by construction.
+
+**Verification is a ladder, not a boolean.** "Elaborated in a scratch buffer" and "passed a
+standalone promotion audit" are different rungs with different names. A rung is earned,
+never assigned, and a lower one is never silently upgraded into a higher one.
+
+**There is no status column anywhere in the schema.** In the optional research ledger,
+status is computed from the event history rather than stored, so no writer can set one. This
+is what keeps a timeout from reading as a refutation and an agent's confidence from reading
+as a proof.
+
+**An exhausted budget is `unresolved`, never `refuted`.** Running out of turns is an
+operational fact about a search. Treating it as evidence about mathematics is the single
+easiest way for a system like this to start lying, so the vocabulary makes it unsayable.
+
+**A refutation needs two premises, so it needs two edges.** A counterexample alone never
+refutes anything: the `refutes` edge must originate at a kernel-trusted claim saying such a
+witness suffices, and the witness attaches to that bridge. One binary edge cannot honestly
+carry an n-ary argument.
+
+**Replay does not need the model.** A finished campaign records its inputs, every candidate,
+and every receipt. Rechecking rebuilds the snapshotted Lean project and re-evaluates the
+saved candidates. Model calls are stochastic; verification is not.
+
+**Failures carry recovery commands.** Every task exits with a stable code class and prints
+one concrete next command. No bare tracebacks.
+
+The [architecture document](docs/architecture.html) covers the trust boundary, the
+acceptance rule, the module map, and the data flow — including a plain list of what this
+design does *not* give you.
 
 ## What it provides
 
 - a Shinka-compatible evaluator for Lean candidate files;
 - weighted, dependency-aware proof goals defined in portable JSON;
-- strict candidate checks for placeholders and custom assumption declarations;
-- per-evaluation receipts with source, project, configuration, and toolchain hashes;
+- a defence-in-depth source scan for placeholders, added assumptions, and metaprogramming
+  escapes;
+- per-evaluation receipts binding source, project, configuration, and toolchain hashes;
 - hash-chained run events and a content-addressed proof-search lineage;
 - replay that rechecks saved candidates instead of replaying stochastic model calls;
-- a domain-neutral append-only research ledger with durable worker queues,
-  artifact integrity checks, deterministic export, and rebuildable projections;
-- short, frozen-objective Spotlight sprints whose exhausted budget is recorded
-  as unresolved rather than refuted;
-- a compatibility bridge for Codex `max` reasoning with the pinned ShinkaEvolve
-  revision;
-- a tiny end-to-end example and tests, including a real Lean kernel check.
+- an optional append-only research ledger with durable worker queues, artifact integrity
+  checks, deterministic export, and rebuildable projections;
+- short, frozen-objective Spotlight sprints whose exhausted budget is recorded as
+  unresolved;
+- a compatibility bridge for Codex `max` reasoning against the pinned ShinkaEvolve revision;
+- a small end-to-end example and a test suite that includes a real Lean kernel check.
 
-The trust boundary, module map, data flow, run artifacts, and current limitations are
-in the self-contained
-[architecture document](docs/architecture.html).
+## Install
 
-## Install and diagnose
-
-The supported interface is [mise](https://mise.jdx.dev/). It pins Python and uv,
-uses uv's checked-in lockfile for every Python command, and leaves Lean builds to
-Lake. Install Git, mise, and Lean through `elan`; Node.js and the Codex CLI are
-needed only for the bundled headless model route.
+The supported interface is [mise](https://mise.jdx.dev/). It pins Python and uv, runs every
+Python command through uv's checked-in lockfile, and leaves Lean builds to Lake. Install
+Git, mise, and Lean through `elan` first. Node.js and the Codex CLI are needed only for the
+bundled headless model route.
 
 ```bash
 git clone <repository-url>
@@ -65,11 +98,185 @@ mise run setup
 mise tasks
 ```
 
-`setup` is safe to repeat. If anything is unavailable or mismatched, start with
-`mise run doctor`; its receipt gives one concrete recovery command per failure.
-No virtual-environment activation or interpreter path is part of the workflow.
+`setup` is safe to repeat. If anything is missing or mismatched, run `mise run doctor`: its
+receipt gives one concrete recovery command per failure. No virtual-environment activation
+or interpreter path is ever part of the workflow.
 
-Configure a canonical ledger on the current machine with both paths together:
+## See it work
+
+The demonstration is offline and deterministic. It spends no model credits and needs no API
+key:
+
+```bash
+mise run demo
+mise run check
+```
+
+The bundled example is honest about being partly unsolved, which is what makes it a useful
+demonstration. `examples/demo/lean/Demo/Targets.lean` states two propositions:
+
+```lean
+def ZeroRightTarget : Prop := ∀ n : Nat, n + 0 = n
+def AdditionCommutesTarget : Prop := ∀ a b : Nat, a + b = b + a
+```
+
+The checked-in seed proves the first and deliberately leaves the second absent. So the demo
+scores 10 of a possible 35 and reports exactly that — an accepted goal and an open one,
+never a total. That gap is the measurable improvement a search engine is pointed at.
+
+`check` is the fast edit-time gate and keeps Lake's incremental products. `mise run audit`
+is the slower release gate: it verifies the lockfile, runs the publication scan and the
+documentation link check, rebuilds Lean from clean, runs configured axiom gates, and
+re-verifies the offline demonstration.
+
+## How scoring works
+
+A candidate is checked as a whole first; if that fails, nothing is credited and no goal is
+even audited. Otherwise each goal is audited in its own Lean run, and goals are settled in
+configuration order. A goal is accepted when all four hold:
+
+1. Lean elaborates `example : <target_type> := <declaration>`, binding the configured
+   proposition to the candidate's declaration;
+2. that same run exits zero and prints a `#print axioms` line for the exact declaration
+   name;
+3. the reported axioms are a subset of `kernel.allowed_axioms`;
+4. every goal named in `depends_on` has already been accepted.
+
+The score is the sum of `weight` over accepted goals. All Lean invocations for one candidate
+share a single `kernel.timeout_seconds` budget, so a slow candidate cannot buy extra time by
+declaring more goals.
+
+## Configure a proof search
+
+Copy `examples/demo/evolve.json` with its prompt and seed. Paths resolve relative to the
+configuration file:
+
+```json
+{
+  "format": "leanevolve-config-v1",
+  "lean_project": "lean",
+  "seed": "seed.lean",
+  "prompt": "prompt.md",
+  "candidate": { "max_bytes": 1048576 },
+  "kernel": {
+    "allowed_axioms": ["Classical.choice", "Quot.sound", "propext"],
+    "timeout_seconds": 120,
+    "warning_as_error": true,
+    "sandbox_prefix": []
+  },
+  "goals": [
+    {
+      "name": "zero_right",
+      "declaration": "Evolved.zero_right",
+      "target_type": "Demo.ZeroRightTarget",
+      "weight": 10,
+      "depends_on": []
+    },
+    {
+      "name": "addition_commutes",
+      "declaration": "Evolved.addition_commutes",
+      "target_type": "Demo.AdditionCommutesTarget",
+      "weight": 25,
+      "depends_on": ["zero_right"]
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `name` | A bookkeeping label. `depends_on` refers to these. |
+| `declaration` | The fully qualified Lean constant the evaluator audits. |
+| `target_type` | The proposition the declaration must inhabit. This is what makes the name unfakeable. |
+| `weight` | Points added to the score when the goal is accepted. |
+| `depends_on` | Goal names that must already be accepted for this one to count. |
+| `allowed_axioms` | The complete permitted axiom base. An empty list allows none. |
+| `warning_as_error` | Adds `-DwarningAsError=true`. This includes style linters. |
+| `sandbox_prefix` | Prepended to the Lean command line, for attaching an external sandbox. |
+
+Candidates must retain exactly one ordered pair of evolution markers:
+
+```lean
+-- EVOLVE-BLOCK-START
+-- Shinka edits this region.
+-- EVOLVE-BLOCK-END
+```
+
+Before Lean runs, comments and string contents are scrubbed and the remaining source is
+scanned for `sorry`, `admit`, `axiom`, `constant`, `#eval`, `#reduce`, `#guard`, `elab`,
+`macro`, `syntax`, `extern`, `foreign`, `implemented_by`, `initialize`, `run_tac`, `unsafe`,
+and `partial`. This textual gate is defence in depth; the axiom receipt is what decides.
+
+## Run a campaign
+
+Preview first. `plan` validates configuration, storage reserve, schedule, pinned
+environment, per-chunk ceiling, and aggregate spend authorization without creating a
+campaign directory or contacting a model:
+
+```bash
+mise run plan -- shinka --proposal-steps 3
+mise run shinka -- --proposal-steps 3
+```
+
+Interactive runs ask before spending. Agents must pass `--yes`, and that authorization is
+recorded in the receipt: `mise run shinka -- --yes --proposal-steps 3`.
+
+Project adapters may expose short Spotlight schedules such as
+`--spotlight 'intermediate_goal for 3 turns'`. A Spotlight freezes one exact objective and
+its kernel-backed relevance path while keeping the full proof field visible; the outcome may
+only be `proved`, `refuted`, or `unresolved`.
+
+Then inspect and recheck:
+
+```bash
+mise run status
+mise run campaigns
+mise run replay -- --run-dir runs/<campaign-id>
+```
+
+`mise run menu` is the full workflow catalog with inputs, outputs, cost, runtime, and
+examples. See [the workflow guide](docs/workflows.md) for configuration, portable storage
+profiles, receipts, and the boundary between mise, uv, Lake, and the library commands.
+
+## Trust boundary
+
+Trusted for a particular run:
+
+1. the formal statements in the Lean project identified by the manifest;
+2. the configured axiom policy;
+3. the Lean toolchain identified by `lean-toolchain`;
+4. Lean's elaborator and kernel, and the small receipt parser.
+
+Not trusted: ShinkaEvolve, model output, prompts, Python orchestration, ranking, search
+history, the research ledger, and human inspection. Those components can discover or
+prioritize a proof. None of them can make a rejected declaration pass.
+
+Each Lean invocation runs in the Lake project directory under an environment reduced to
+`ELAN_HOME`, `HOME`, `LANG`, `LC_ALL`, `PATH`, `TMPDIR`, and `USER`. That is not
+containment. Lean compilation can execute metaprograms at compile time, so run untrusted
+campaigns in a disposable container or virtual machine; see [SECURITY.md](SECURITY.md).
+
+## Reproducibility and audit
+
+Each run records exact input snapshots with SHA-256 records, the configuration and model
+parameters, an append-only hash-linked event stream, every candidate with its kernel
+receipt, the parent-linked frontier selected from Shinka's run database, and a final result
+inventory.
+
+`mise run replay` verifies the stored inventory and lineage hashes, rebuilds the snapshotted
+Lean project, re-evaluates every recorded candidate, and fails if the accepted goals differ.
+The model need not be available.
+
+One limit stated plainly: these hashes are tamper-*evident*, not tamper-proof. They detect
+edits relative to a manifest an auditor already trusts. Against someone who can rewrite the
+manifest too, they establish nothing on their own.
+
+## The research ledger
+
+Optional, and off unless configured. It stores typed research objects, relationships,
+append-only events, evaluator receipts, and content-addressed artifacts in one auditable
+system. Goal boards, chronologies, proof graphs, prior-art crosswalks, recovery queues, and
+status reports are disposable projections rather than competing sources of truth.
 
 ```bash
 mise run configure -- \
@@ -79,137 +286,34 @@ mise run ledger -- --database /path/to/research.sqlite3 verify \
   --artifacts /path/to/ledger-artifacts --deep
 ```
 
-Projects that complete ledger cutover list workflows that must fail closed in
-`ledger.required_workflows` in `leanevolve.toml`.
+The two paths are an all-or-nothing pair. Projects that complete cutover list the workflows
+that must fail closed under `ledger.required_workflows` in `leanevolve.toml`.
 
-## Validate
+The core is domain-neutral: it names no theorem namespace and no project layout.
+Theorem-specific corpus importers and compatibility adapters belong in downstream proof
+projects. See [the ledger page](docs/ledger.html) for the verification ladder, the authority
+model, three-valued truth, and the projections.
 
-Run the deterministic, no-spend demonstration, then the fast edit-time gate:
+## Task interface
 
-```bash
-mise run demo
-mise run check
-```
+Every important task accepts `--json`, for example `mise run status -- --json`. Receipts use
+the versioned `leanevolve-task-receipt-v1` format and are written to disk before the process
+exits, including on interruption. Human and JSON results are retained under
+`.cache/leanevolve/receipts/`, and detailed subprocess logs under
+`.cache/leanevolve/logs/`.
 
-`check` keeps Lake's incremental products. `mise run audit` is the slower release
-gate: it checks the lock, runs the publication scan, rebuilds Lean from clean, and
-re-verifies the offline demonstration. Neither command presents an open proposition
-as a proved theorem.
+| Exit | Class | Meaning |
+|---|---|---|
+| `0` | `OK` | Task succeeded. |
+| `2` | `USAGE` | The request was malformed or referenced missing inputs. |
+| `3` | `MISSING_TOOL` | A required tool or environment is unavailable. |
+| `4` | `VALIDATION` | A gate rejected the repository or an artifact. |
+| `5` | `NO_RESULT` | The workflow ran but produced no scientific result. |
+| `6` | `INFRASTRUCTURE` | Storage, network, or a subprocess failed unexpectedly. |
+| `130` | `INTERRUPTED` | The task was interrupted before it finished. |
 
-Every important task accepts `--json`, for example
-`mise run status -- --json`. Human and JSON results are also retained under
-`.cache/leanevolve/receipts/`.
-
-## Run or preview a campaign
-
-Preview validates the configuration, storage reserve, schedule, pinned environment,
-per-chunk ceiling, and aggregate spend authorization without creating a campaign
-directory or contacting a model:
-
-```bash
-mise run plan -- shinka --proposal-steps 3
-mise run shinka -- --proposal-steps 3
-```
-
-Interactive runs ask before spending. Agents must add `--yes`, and that authorization
-is recorded: `mise run shinka -- --yes --proposal-steps 3`.
-
-Project adapters may also expose short Spotlight schedules such as
-`--spotlight 'intermediate_goal for 3 turns'`. A Spotlight freezes the exact
-objective and its relevance path while retaining the full proof field; an
-exhausted budget is recorded as unresolved, never refuted.
-
-Model calls are stochastic; verification is not. Inspect status and replay a saved
-campaign through the same locked environment:
-
-```bash
-mise run status
-mise run campaigns
-mise run replay -- --run-dir runs/<campaign-id>
-```
-
-`mise run menu` is the detailed workflow catalog, including inputs, outputs, cost,
-runtime, and examples. See
-[the workflow guide](docs/workflows.md) for
-configuration, portable storage profiles, receipts, exit codes, and the boundary
-between mise, uv, Lake, and the underlying library commands.
-
-## Configure a proof search
-
-Copy `examples/demo/evolve.json`, its prompt, and its seed. The important fields are:
-
-```json
-{
-  "format": "leanevolve-config-v1",
-  "lean_project": "lean",
-  "seed": "seed.lean",
-  "prompt": "prompt.md",
-  "kernel": {
-    "allowed_axioms": ["Classical.choice", "Quot.sound", "propext"],
-    "timeout_seconds": 120,
-    "warning_as_error": true
-  },
-  "goals": [
-    {
-      "name": "base",
-      "declaration": "Evolved.base",
-      "target_type": "Demo.BaseTarget",
-      "weight": 10,
-      "depends_on": []
-    }
-  ]
-}
-```
-
-Paths are relative to the configuration file. Goal credit is cumulative and gated
-by `depends_on`: a later declaration receives credit only when Lean accepts it and
-all configured predecessors. Goal names are bookkeeping labels; `declaration` is
-the fully qualified Lean constant audited by the evaluator.
-
-Candidates must retain exactly one pair of evolution markers:
-
-```lean
--- EVOLVE-BLOCK-START
--- Shinka edits this region.
--- EVOLVE-BLOCK-END
-```
-
-The evaluator rejects placeholders such as `sorry` and `admit`, custom assumption
-declarations, unsafe declarations, and compile-time commands that could counterfeit
-diagnostic output. This textual gate is defense in depth. The decisive checks are
-Lean elaboration and the declaration dependency receipts.
-
-## Trust boundary
-
-Trusted for a particular run:
-
-1. the formal statement and supporting Lean project identified by the manifest;
-2. the configured axiom policy;
-3. the Lean toolchain identified by `lean-toolchain`;
-4. the Lean kernel and the small receipt parser.
-
-Not trusted: ShinkaEvolve, model output, prompts, Python orchestration, ranking,
-search history, and human inspection. These components can discover or prioritize a
-proof, but cannot make a rejected declaration pass the acceptance gate.
-
-Lean compilation can execute metaprograms. The evaluator limits time and environment
-but is not a general operating-system sandbox. Run untrusted campaigns in a
-disposable container or virtual machine; see [SECURITY.md](SECURITY.md).
-
-## Reproducibility and audit
-
-Each run records:
-
-- exact input snapshots and SHA-256 records;
-- configuration and model parameters;
-- an append-only, hash-linked event stream;
-- every candidate and its kernel evaluation receipt;
-- the parent-linked frontier selected from Shinka's run database;
-- a final result inventory.
-
-`mise run replay` verifies the stored inventory first, rebuilds the snapshotted
-Lean project, reevaluates candidates, and fails if accepted goals differ. The model
-does not need to be available for replay.
+Exit `5` is worth dwelling on: a search that ran correctly and found nothing is a different
+outcome from a search that broke, and the two get different codes.
 
 ## Development
 
@@ -220,12 +324,11 @@ mise run docs
 mise run audit
 ```
 
-`mise run docs` regenerates the published documentation site into `_site/` and fails
-on any link that would not resolve once GitHub Pages serves it under `/LeanEvolve/`.
-Preview it with `python -m http.server --directory _site 8000`.
+`mise run docs` regenerates the site into `_site/` and fails on any internal link that would
+not resolve once GitHub Pages serves it under a repository prefix. Preview it with
+`python -m http.server --directory _site 8000`. Building proves the links resolve; it proves
+nothing about whether the prose is true.
 
-The source tree intentionally keeps the evaluator small. New search features should
-remain outside the mathematical trust boundary, emit auditable artifacts, and have
-tests that demonstrate tamper detection or a real kernel rejection.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the change checklist.
+Keep the evaluator small. New search features should stay outside the mathematical trust
+boundary, emit auditable artifacts, and come with a test that demonstrates tamper detection
+or a real kernel rejection. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full checklist.
