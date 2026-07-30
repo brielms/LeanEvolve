@@ -18,66 +18,24 @@ nothing here presents an open proposition as a proved theorem.
 [research ledger](docs/ledger.html) · [workflows](docs/workflows.md). The published site is
 generated from these sources and stamped with the commit it was built from.
 
-## What makes this interesting
-
-Most of the design effort went somewhere unusual: into making it structurally impossible
-for the system to overstate what it has established.
-
-**The scorer cannot be persuaded.** Credit is not a model's self-report, a heuristic, or a
-regex over Lean's output looking for the absence of errors. For each configured goal,
-LeanEvolve asks Lean to elaborate `example : <target_type> := <declaration>` and to print
-that declaration's axiom dependencies. A proof that type-checks but leans on an axiom
-outside the policy scores zero, and so does a declaration published under the expected name
-that proves something else entirely.
-
-**The trusted set is deliberately tiny.** The kernel driver and receipt parser together are
-about 170 lines of Python. Everything else — 12,000 lines of orchestration, task interface,
-and record-keeping — sits outside the mathematical trust boundary by construction.
-
-**Verification is a ladder, not a boolean.** "Elaborated in a scratch buffer" and "passed a
-standalone promotion audit" are different rungs with different names. A rung is earned,
-never assigned, and a lower one is never silently upgraded into a higher one.
-
-**There is no status column anywhere in the schema.** In the optional research ledger,
-status is computed from the event history rather than stored, so no writer can set one. This
-is what keeps a timeout from reading as a refutation and an agent's confidence from reading
-as a proof.
-
-**An exhausted budget is `unresolved`, never `refuted`.** Running out of turns is an
-operational fact about a search. Treating it as evidence about mathematics is the single
-easiest way for a system like this to start lying, so the vocabulary makes it unsayable.
-
-**A refutation needs two premises, so it needs two edges.** A counterexample alone never
-refutes anything: the `refutes` edge must originate at a kernel-trusted claim saying such a
-witness suffices, and the witness attaches to that bridge. One binary edge cannot honestly
-carry an n-ary argument.
-
-**Replay does not need the model.** A finished campaign records its inputs, every candidate,
-and every receipt. Rechecking rebuilds the snapshotted Lean project and re-evaluates the
-saved candidates. Model calls are stochastic; verification is not.
-
-**Failures carry recovery commands.** Every task exits with a stable code class and prints
-one concrete next command. No bare tracebacks.
-
-The [architecture document](docs/architecture.html) covers the trust boundary, the
-acceptance rule, the module map, and the data flow — including a plain list of what this
-design does *not* give you.
-
 ## What it provides
 
-- a Shinka-compatible evaluator for Lean candidate files;
-- weighted, dependency-aware proof goals defined in portable JSON;
-- a defence-in-depth source scan for placeholders, added assumptions, and metaprogramming
-  escapes;
-- per-evaluation receipts binding source, project, configuration, and toolchain hashes;
-- hash-chained run events and a content-addressed proof-search lineage;
-- replay that rechecks saved candidates instead of replaying stochastic model calls;
-- an optional append-only research ledger with durable worker queues, artifact integrity
-  checks, deterministic export, and rebuildable projections;
-- short, frozen-objective Spotlight sprints whose exhausted budget is recorded as
-  unresolved;
-- a compatibility bridge for Codex `max` reasoning against the pinned ShinkaEvolve revision;
-- a small end-to-end example and a test suite that includes a real Lean kernel check.
+A scaffold for pointing [ShinkaEvolve](https://github.com/SakanaAI/ShinkaEvolve) — Sakana AI's evolutionary program-search loop — at a Lean 4 project, so that the search can propose incremental proofs without ever being trusted to have found one.
+
+- A Shinka-compatible evaluator: Shinka mutates candidate Lean files, the evaluator builds them and reports back whether the Lean kernel accepted the result, so the fitness signal is a kernel verdict rather than a model's judgment
+- Weighted, dependency-aware goals: the open theorems are scored so search effort follows what unblocks the most downstream results, instead of a flat queue
+- Per-evaluation receipts: each result is bound to the hashes of its candidate source, the Lean project, the config, and the toolchain — so a score can be re-derived, and can't silently drift when the environment changes
+- Hash-chained events and content-addressed lineage: every run appends to a tamper-evident log, and each proof is addressed by the content of its search history, so you can trace any accepted theorem back to what produced it
+- Replay by recheck: saved candidates are re-verified against the kernel rather than reproduced by re-running stochastic model calls
+
+
+## Design notes
+
+- Credit comes from Lean, not from the model. For each goal, LeanEvolve asks Lean to elaborate example : <target_type> := <declaration> and print that declaration's axiom dependencies. A proof that type-checks but leans on an out-of-policy axiom scores zero; so does a declaration published under the right name that proves something else. There is no regex over Lean's output and no self-report.
+
+- Verification is a ladder, not a boolean. "Elaborated in a scratch buffer" and "passed a standalone promotion audit" are different rungs with different names, and a lower one is never silently promoted. An exhausted budget is unresolved, never refuted — running out of turns is a fact about a search, not about mathematics.
+
+- The architecture document (docs/architecture.html) covers the trust boundary, acceptance rule, module map, and data flow, including a plain list of what this design does not give you.
 
 ## Install
 
