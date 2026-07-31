@@ -14,7 +14,7 @@ from formal.shinka.audit import file_record, utc_now
 START_MARKER = "-- EVOLVE-BLOCK-START"
 END_MARKER = "-- EVOLVE-BLOCK-END"
 APPEND_SENTINEL = "-- SHINKA-APPEND-HERE"
-CHECKPOINT_NAMESPACE = "Generated"
+CHECKPOINT_NAMESPACE = "Demo.Generated"
 CHECKPOINT_MODULE = f"{CHECKPOINT_NAMESPACE}.Checkpoint"
 
 

@@ -84,7 +84,7 @@ def source_inputs(
 #: Name of the Lean library a project builds, used for the root module file
 #: and the directory holding its modules.  Projects with a different library
 #: name pass it explicitly rather than relying on this default.
-DEFAULT_LIBRARY = "Generated"
+DEFAULT_LIBRARY = "Demo"
 
 
 def formal_source_paths(
